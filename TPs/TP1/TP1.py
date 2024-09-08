@@ -64,7 +64,7 @@ def image_preprocessing(image):
 
     cropped_image = image_rgba
 
-    # If the image is already cropped, skip the crop part
+    # If the image is already cropped, skip this part
     if len(contours) != 0:
         # Get the bounding box of the largest contour
         x, y, w, h = cv2.boundingRect(contours[0])
@@ -72,13 +72,13 @@ def image_preprocessing(image):
         # Crop the image using the bounding box
         cropped_image = image_rgba[y:y + h, x:x + w]
 
+    # Convert the image to RGB
     cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
 
     return cropped_image
 
 
 def rotate_image(image, angle):
-    # Rotate the image in another function
     height, width, _ = image.shape
 
     # Rotate the image
@@ -95,26 +95,29 @@ def place_fragments(blank_image, fragments_data, fragments_images):
     print("y_max :", y_max)
 
     for i in range(len(fragments_data)):
+        # Get the data from the list
         x_i = fragments_data[i][1]
         y_i = fragments_data[i][2]
         angle = fragments_data[i][3]
         image = fragments_images[i]
 
+        # Remove black and reshape the image
         image = image_preprocessing(image)
+        # Rotate the image
         rotated_image = rotate_image(image, angle)
-
-        rotated_image_2 = image_preprocessing(rotated_image)
-
-        height, width, _ = rotated_image_2.shape
-
+        # Remove the black a second time after the image rotation to reshape the image according to its new form
+        final_image = image_preprocessing(rotated_image)
+        # Get the height and width of the final image
+        height, width, _ = final_image.shape
 
         print("======================== i : ", i)
         print("X : ", x_i)
         print("Y : ", y_i)
-        print("SHAPE : ", rotated_image_2.shape)
+        print("SHAPE : ", final_image.shape)
         print("Width : ", width)
         print("height : ", height)
 
+        # Compute top left coordinates of the image in the painting
         x_1 = math.ceil(x_i - (width / 2))
         y_1 = math.ceil(y_i - (height / 2))
         #x_1 = max(x_1, x_min)
@@ -122,6 +125,7 @@ def place_fragments(blank_image, fragments_data, fragments_images):
         print("x_1 : ", x_1)
         print("y_1 : ", y_1)
 
+        # Compute bottom right coordinates of the image in the painting
         x_2 = math.ceil(x_i + (width / 2))
         y_2 = math.ceil(y_i + (height / 2))
         #x_2 = min(x_2, x_max)
@@ -129,26 +133,49 @@ def place_fragments(blank_image, fragments_data, fragments_images):
         print("x_2 : ", x_2)
         print("y_2 : ", y_2)
 
-        blank_image[y_1:y_2, x_1:x_2] = rotated_image_2
+        # "Paste" the image fragment on the painting
+        # Create a mask where the pixels of the image are not black
+        mask = (final_image[:, :, 0] != 0) & (final_image[:, :, 1] != 0) & (final_image[:, :, 2] != 0)
+
+        # Paste the image onto the blank_image using the mask to remove the black pixels remaining
+        blank_image[y_1:y_2, x_1:x_2][mask] = final_image[mask]
+
+        """
+        Old version :
+        # "Paste" the image fragment on the painting
+        for i in range(width):
+            for j in range(height):
+                # Add the new image pixels only if they aren't black, if they aren't the contour of the image
+                if (image[j, i, 0] != 0) & (image[j, i, 1] != 0) & image[j, i, 2] != 0:
+                    blank_image[y_1 + j, x_1 + i] = final_image[j, i]
+                    
+        Initial version :
+        #blank_image[y_1:y_2, x_1:x_2] = final_image
+        """
 
 
     return blank_image
 
 
 def show_image(image):
+    # Show the image
     cv2.imshow('Image', image)
-
     # Wait for a key press and close the image windows
     cv2.waitKey(0)
+    # Then kill the image's window
     cv2.destroyAllWindows()
 
 
 def main():
+    # Load the data about the images
     fragments_data = load_fragments(fragment_path)
+    # Load the images according to the data collected
     fragments_images = load_images(fragments_data, fragment_directory)
-
+    # Get the final painting or a blank image
     blank_image = cv2.imread(final_image_path)
+    # Place the fragments on the painting
     final_image = place_fragments(blank_image, fragments_data, fragments_images)
+    # Show the final painting with the fragments on it
     show_image(final_image)
 
 
