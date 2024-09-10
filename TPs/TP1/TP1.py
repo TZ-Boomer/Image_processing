@@ -65,8 +65,13 @@ def place_fragments(painting, fragments_data, fragments_images):
 
         # Rotate the image
         rotated_fragment = rotate_image(fragment, angle)
-        # Get the height and width of the rotated image
-        height, width, _ = rotated_fragment.shape
+
+        # Crop the black part around the fragment
+        # Return a rectangle image still with black pixels along the curved parts of the fragment
+        rotated_fragment_cropped = crop_black_contours(rotated_fragment)
+
+        # Get the height and width of the rotated_fragment_cropped
+        height, width, _ = rotated_fragment_cropped.shape
 
         # Compute top left coordinates of the image in the painting
         x_1 = math.ceil(x_i - (width / 2))
@@ -76,38 +81,48 @@ def place_fragments(painting, fragments_data, fragments_images):
         x_2 = math.ceil(x_i + (width / 2))
         y_2 = math.ceil(y_i + (height / 2))
 
+        # Create a mask where pixels aren't black
+        mask = (rotated_fragment_cropped[:, :, 0] != 0) & (rotated_fragment_cropped[:, :, 1] != 0) & (
+                    rotated_fragment_cropped[:, :, 2] != 0)
+
+        """ 
+        There is still some black pixels remaining because the previous crop only reshaped the image as clos as possible
+        pf the fragment still making a rectangle image. Inside the rectangle image, there is still some black pixels we
+        don't want to print on the painting. Thus, if a pixel is black, we don't print it thanks to the mask
+        """
+        # Paste the image fragment on the painting using the mask
+        painting[y_1:y_2, x_1:x_2][mask] = rotated_fragment_cropped[mask]
+
+        """
+        Much slower version. Easy to implement.
         # "Paste" the image fragment on the painting
         for i in range(width):
             for j in range(height):
                 # Add the new image pixels only if they aren't black, if they aren't the contour of the image
                 if (rotated_fragment[j, i, 0] > 3) & (rotated_fragment[j, i, 1] > 3) & (rotated_fragment[j, i, 2] > 3):
                     painting[y_1 + j, x_1 + i] = rotated_fragment[j, i]
-
-        """      
-        # Ensure the region does not go out of bounds of the blank_image
-        y_2 = min(y_2, painting.shape[0])
-        x_2 = min(x_2, painting.shape[1])
-        y_1 = max(0, y_1)
-        x_1 = max(0, x_1)
-
-        # Adjust the rotated_image to match the valid region size
-        # Sometimes, the fragment would go over the bound of the painting
-        valid_height = y_2 - y_1
-        valid_width = x_2 - x_1
-
-        # Crop the image with the maximum valid size
-        # DO NOT WORK IS THE FRAGMENT IS OVER THE LEFT OR THE TOP BOUND
-        # The for loop works but its much slower
-        final_image_cropped = rotated_image[:valid_height, :valid_width]
-
-        # Create a mask where pixels aren't black
-        mask = (final_image_cropped[:, :, 0] != 0) & (final_image_cropped[:, :, 1] != 0) & (final_image_cropped[:, :, 2] != 0)
-
-        # Paste the image fragment on the painting using the mask
-        painting[y_1:y_2, x_1:x_2][mask] = final_image_cropped[mask]
         """
 
     return painting
+
+
+def crop_black_contours(image):
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Create a binary mask where black pixels are 0 and non-black are 255
+    _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+
+    # Find contours from the binary mask
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Get the bounding box of the largest contour
+    x, y, w, h = cv2.boundingRect(contours[0])
+
+    # Crop the image using the bounding box
+    cropped_image = image[y:y + h, x:x + w]
+
+    return cropped_image
 
 
 def show_image(image):
