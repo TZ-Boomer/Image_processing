@@ -3,7 +3,7 @@ import numpy as np
 from math import *
 
 
-IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/fourn.png"
+IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/four.png"
 
 
 """ Hough parameters """
@@ -13,9 +13,7 @@ DELTA_RAD = 1
 MIN_R = 0
 MIN_C = 0
 MIN_RAD = 5
-N_CIRCLES = 4
-THRESHOLD = 0.2
-LOCAL_MAX_KERNEL_SIZE = 5
+N_CIRCLES = 1
 
 
 def display_image(image):
@@ -61,7 +59,8 @@ def get_edges_coordinates(edges_image):
     return edge_coordinates
 
 
-def populate_accumulator(edges_image):
+
+def hough_method(edges_image, original_image):
     # Get the dimensions of the image
     height, width = edges_image.shape[:2]
 
@@ -79,97 +78,57 @@ def populate_accumulator(edges_image):
 
     accumulator = np.zeros((n_c, n_r, n_rad))
 
+    # Assuming you have already obtained the edges_image from the Sobel and thresholding steps
     edge_coordinates = get_edges_coordinates(edges_image)
 
+    # Vote in the accumulator
     for edge in edge_coordinates:
         edge_x, edge_y = edge
-
-        for c_idx in range(width):
-            for r_idx in range(height):
-                # If the point in the image is too close to the edge, we do not compute the associated circle
-                circle_radius = compute_pixels_distance(c_idx, r_idx, edge_x, edge_y)
-                if MIN_RAD <= circle_radius < diagonal:
-                    acc_c_idx = int((c_idx - MIN_C) / DELTA_C)
-                    acc_r_idx = int((r_idx - MIN_R) / DELTA_R)
-                    acc_rad_idx = int((circle_radius - MIN_RAD) / DELTA_RAD)
-
+        for r in range(MIN_RAD, n_r):
+            for c in range(MIN_RAD, n_c):
+                radius = compute_pixels_distance(c, r, edge_x, edge_y)
+                if MIN_RAD <= radius < diagonal:
+                    acc_r_idx = int((r - MIN_R) / DELTA_R)
+                    acc_c_idx = int((c - MIN_C) / DELTA_C)
+                    acc_rad_idx = int((radius - MIN_RAD) / DELTA_RAD)
                     if 0 <= acc_c_idx < n_c and 0 <= acc_r_idx < n_r and 0 <= acc_rad_idx < n_rad:
-                        accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += (1 / (2 * np.pi * circle_radius))
-                    else:
-                        raise Exception(f"Unexpected index value for the accumulator "
-                                        f"acc_c_idx : {acc_c_idx}, acc_r_idx : {acc_r_idx}, acc_rad_idx : {acc_rad_idx}")
+                        accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += 1
 
-    return accumulator
-
-
-def get_local_maximum(accumulator):
-    n_c, n_r, n_rad = accumulator.shape
-
-    padding = int(LOCAL_MAX_KERNEL_SIZE / 2)
-    kernel = list(range(-padding, padding + 1))
-
-    # Initialize an empty list to store the coordinates of local maxima
+    # Local maxima detection
     local_maxima_coords = []
-
-    # Loop through each element in the 3D array, avoiding the borders
-    for x in range(padding, n_c - padding):
-        for y in range(padding, n_r - padding):
-            for z in range(padding, n_rad - padding):
-                # Get the current value
+    for x in range(1, n_r - 1):
+        for y in range(1, n_c - 1):
+            for z in range(1, n_rad - 1):
                 current_value = accumulator[x, y, z]
-
-                # Flag to check if this is a local maximum
                 is_local_maximum = True
-
-                # Loop through the neighboring cells
-                for dx in kernel:
-                    for dy in kernel:
-                        for dz in kernel:
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        for dz in [-1, 0, 1]:
                             if dx == 0 and dy == 0 and dz == 0:
-                                continue  # Skip the current cell itself
-
-                            # Compare with neighboring cell
-                            neighbor_value = accumulator[x + dx, y + dy, z + dz]
-                            if neighbor_value >= current_value:
+                                continue
+                            if accumulator[x + dx, y + dy, z + dz] >= current_value:
                                 is_local_maximum = False
-                                break  # Stop checking neighbors if one is greater or equal
+                                break
                         if not is_local_maximum:
                             break
                     if not is_local_maximum:
                         break
-
-                # If it's a local maximum, save its coordinates
                 if is_local_maximum:
-                    acc_value = accumulator[x, y, z]
-                    local_maxima_coords.append((x, y, z, acc_value))
+                    local_maxima_coords.append((x, y, z, current_value))
 
-    # Sort the local_maxima_coords in descending order based on the accumulator value
+    # Sort and draw the top N circles
     sorted_local_maxima_coords = sorted(local_maxima_coords, key=lambda x: x[3], reverse=True)
-
-    return sorted_local_maxima_coords
-
-
-def draw_circles(original_image, sorted_local_maxima_coords):
-    color = (0, 255, 0)  # Color in BGR (Green in this case)
-    thickness = 1  # Line thickness (-1 to fill the circle)
-
-    # Drawing circles
+    color = (0, 255, 0)  # Green color for circles
+    thickness = 1
     for i in range(N_CIRCLES):
         x_idx, y_idx, radius_idx = sorted_local_maxima_coords[i][:3]
-        x = int((x_idx * DELTA_C) + MIN_C)
-        y = int((y_idx * DELTA_R) + MIN_R)
-        radius = int((radius_idx * DELTA_RAD) + MIN_RAD)
+        x = (x_idx * DELTA_C) + MIN_C
+        y = (y_idx * DELTA_R) + MIN_R
+        radius = (radius_idx * DELTA_RAD) + MIN_RAD
+        center_coordinates = (int(x), int(y))
+        cv2.circle(original_image, center_coordinates, int(radius), color, thickness)
 
-        cv2.circle(original_image, (x, y), radius, color, thickness)
-
-
-def hough_method(edges_image, original_image):
-    accumulator = populate_accumulator(edges_image)
-
-    sorted_local_maxima_coords = get_local_maximum(accumulator)
-
-    draw_circles(original_image, sorted_local_maxima_coords)
-
+    # Display the final image
     display_image(original_image)
 
 
@@ -182,11 +141,12 @@ def main():
     image = cv2.imread(IMAGE_PATH) #cv2.IMREAD_GRAYSCALE
 
     # Get the edges image
-    edges_image = get_edges_image(image, threshold_ratio=THRESHOLD)
+    edges_image = get_edges_image(image, threshold_ratio=0.1)
 
-    display_image(edges_image)
+    #display_image(edges_image)
 
     hough_method(edges_image, image)
+
 
 
 if __name__ == '__main__':
