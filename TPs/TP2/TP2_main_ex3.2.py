@@ -3,7 +3,7 @@ import numpy as np
 from math import *
 
 
-IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/fourn.png"
+IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/four.png"
 
 
 """ Hough parameters """
@@ -13,9 +13,79 @@ DELTA_RAD = 1
 MIN_R = 0
 MIN_C = 0
 MIN_RAD = 5
-N_CIRCLES = 4
+N_CIRCLES = 2
 THRESHOLD = 0.2
-LOCAL_MAX_KERNEL_SIZE = 5
+LOCAL_MAX_KERNEL_SIZE = 3
+IMAGE_REDUCTION = 2 # Image divided by 2 at each iteration
+
+
+def main():
+    # Load the image
+    image = cv2.imread(IMAGE_PATH) #cv2.IMREAD_GRAYSCALE
+
+    # Get the edges image
+    edges_image = get_edges_image(image, threshold_ratio=THRESHOLD)
+
+    display_image(edges_image)
+
+    image_reduction(edges_image, image)
+
+    #hough_method(edges_image, image)
+
+
+def resize_image(image, scale_factor=0.5):
+    # Calculate new dimensions
+    new_width = int(image.shape[1] * scale_factor)
+    new_height = int(image.shape[0] * scale_factor)
+    new_dimensions = (new_width, new_height)
+
+    # Resize the image
+    new_image = cv2.resize(image, new_dimensions, interpolation=cv2.INTER_AREA)
+
+    return new_image
+
+
+def image_reduction(edges_image, original_image):
+    edges_images = []
+    original_images = []
+    local_maxima_coords = []
+
+    edges_images.append(edges_image)
+    original_images.append(original_image)
+
+    for i in range(IMAGE_REDUCTION):
+        # We take the previous resize [-1] and resize it again
+        edges_images.append(resize_image(edges_images[-1], 0.5))
+        original_images.append(resize_image(original_images[-1], 0.5))
+
+    print("Number of images : ", len(edges_images))
+
+    for i in range(IMAGE_REDUCTION, -1, -1):
+        print("============================== Image reduction iteration : ", i)
+        print("Number of circles coordinates : ", len(local_maxima_coords))
+        # Multiply the coordinates by 2
+        local_maxima_coords = [[row[0] * 2, row[1] * 2, row[2] * 4, row[3]] for row in local_maxima_coords]
+
+        if i == IMAGE_REDUCTION:
+            # First iteration, we go through the whole image
+            local_max = hough_method(edges_images[i])
+            print("LEN local max : ", len(local_max))
+            local_maxima_coords.extend(local_max)
+        else:
+            # We only compute the circles in range [MIN_RAD ; 2 * MIN_RAD], because 2 * MIN_RAD was our previous MIN_RAD
+            local_max = hough_method(edges_images[i], 2 * MIN_RAD)
+            print("LEN local max : ", len(local_max))
+            local_maxima_coords.extend(local_max)
+
+        # Create a copy of the image, draw the circles and display it
+        image_copy = original_images[i].copy()
+        draw_circles(image_copy, local_maxima_coords)
+        display_image(image_copy)
+
+        print("local_maxima_coords : ", local_maxima_coords)
+
+
+
 
 
 def display_image(image):
@@ -61,22 +131,27 @@ def get_edges_coordinates(edges_image):
     return edge_coordinates
 
 
-def populate_accumulator(edges_image):
+def populate_accumulator(edges_image, max_radius):
     # Get the dimensions of the image
     height, width = edges_image.shape[:2]
 
     r_max = height - 1
     c_max = width - 1
 
-    n_c = floor(((c_max - MIN_C) / DELTA_C) + 1) # The number of column discretize
-    n_r = floor(((r_max - MIN_R) / DELTA_R) + 1) # The number of rows discretize
-    diagonal = np.sqrt(width ** 2 + height ** 2)
-    n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
+    n_c = floor(((c_max - MIN_C) / DELTA_C) + 1)  # The number of column discretize
+    n_r = floor(((r_max - MIN_R) / DELTA_R) + 1)  # The number of rows discretize
+
+    if max_radius == -1: # We compute all the possible circle for the whole image between MIN_RAD and diagonal
+        diagonal = np.sqrt(width ** 2 + height ** 2)
+        n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
+    else: # We compute the possible circles between MIN_RAD and max_radius
+        diagonal = max_radius
+        n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
+
     print("n_r_values : ", n_r)
     print("n_c_values : ", n_c)
     print("n_rad_values : ", n_rad)
     print("diagonal : ", diagonal)
-
     accumulator = np.zeros((n_c, n_r, n_rad))
 
     edge_coordinates = get_edges_coordinates(edges_image)
@@ -145,6 +220,7 @@ def get_local_maximum(accumulator):
 
     # Sort the local_maxima_coords in descending order based on the accumulator value
     sorted_local_maxima_coords = sorted(local_maxima_coords, key=lambda x: x[3], reverse=True)
+    sorted_local_maxima_coords = sorted_local_maxima_coords[:N_CIRCLES]
 
     return sorted_local_maxima_coords
 
@@ -153,8 +229,10 @@ def draw_circles(original_image, sorted_local_maxima_coords):
     color = (0, 255, 0)  # Color in BGR (Green in this case)
     thickness = 1  # Line thickness (-1 to fill the circle)
 
+    n_circles = len(sorted_local_maxima_coords)
+
     # Drawing circles
-    for i in range(N_CIRCLES):
+    for i in range(n_circles):
         x_idx, y_idx, radius_idx = sorted_local_maxima_coords[i][:3]
         x = int((x_idx * DELTA_C) + MIN_C)
         y = int((y_idx * DELTA_R) + MIN_R)
@@ -163,30 +241,17 @@ def draw_circles(original_image, sorted_local_maxima_coords):
         cv2.circle(original_image, (x, y), radius, color, thickness)
 
 
-def hough_method(edges_image, original_image):
-    accumulator = populate_accumulator(edges_image)
+def hough_method(edges_image, max_radius=-1):
+    accumulator = populate_accumulator(edges_image, max_radius)
 
     sorted_local_maxima_coords = get_local_maximum(accumulator)
 
-    draw_circles(original_image, sorted_local_maxima_coords)
+    return sorted_local_maxima_coords
 
-    display_image(original_image)
 
 
 def compute_pixels_distance(p1x, p1y, p2x, p2y):
     return sqrt((p2x - p1x) ** 2 + (p2y - p1y) ** 2)
-
-
-def main():
-    # Load the image
-    image = cv2.imread(IMAGE_PATH) #cv2.IMREAD_GRAYSCALE
-
-    # Get the edges image
-    edges_image = get_edges_image(image, threshold_ratio=THRESHOLD)
-
-    display_image(edges_image)
-
-    hough_method(edges_image, image)
 
 
 if __name__ == '__main__':
