@@ -6,6 +6,16 @@ from math import *
 IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/four.png"
 
 
+"""
+Clues to resolve the issue :
+- Refine circles center and radius
+    After the first iteration, take the coordinates and recompute the circles withe close center dans radius values
+        -> small accumulator
+    As I already did, compute eventual new circles that was to small to be detected.
+"""
+
+
+
 """ Hough parameters """
 DELTA_R = 1
 DELTA_C = 1
@@ -14,9 +24,11 @@ MIN_R = 0
 MIN_C = 0
 MIN_RAD = 5
 N_CIRCLES = 2
-THRESHOLD = 0.2
+FILTER_EDGES_THRESHOLD = 0.2
 LOCAL_MAX_KERNEL_SIZE = 3
-IMAGE_REDUCTION = 2 # Image divided by 2 at each iteration
+
+IMAGE_REDUCTION_LEVELS = 1 # Image divided by 2 at each iteration
+SCALE_FACTOR = 2
 
 
 def main():
@@ -24,19 +36,17 @@ def main():
     image = cv2.imread(IMAGE_PATH) #cv2.IMREAD_GRAYSCALE
 
     # Get the edges image
-    edges_image = get_edges_image(image, threshold_ratio=THRESHOLD)
+    edges_image = get_edges_image(image, threshold_ratio=FILTER_EDGES_THRESHOLD)
 
     display_image(edges_image)
 
     image_reduction(edges_image, image)
 
-    #hough_method(edges_image, image)
 
-
-def resize_image(image, scale_factor=0.5):
+def resize_image(image):
     # Calculate new dimensions
-    new_width = int(image.shape[1] * scale_factor)
-    new_height = int(image.shape[0] * scale_factor)
+    new_width = int(image.shape[1] * (1 / SCALE_FACTOR))
+    new_height = int(image.shape[0] * (1 / SCALE_FACTOR))
     new_dimensions = (new_width, new_height)
 
     # Resize the image
@@ -53,20 +63,21 @@ def image_reduction(edges_image, original_image):
     edges_images.append(edges_image)
     original_images.append(original_image)
 
-    for i in range(IMAGE_REDUCTION):
+    for i in range(IMAGE_REDUCTION_LEVELS):
         # We take the previous resize [-1] and resize it again
-        edges_images.append(resize_image(edges_images[-1], 0.5))
-        original_images.append(resize_image(original_images[-1], 0.5))
+        edges_images.append(resize_image(edges_images[-1]))
+        original_images.append(resize_image(original_images[-1]))
 
     print("Number of images : ", len(edges_images))
 
-    for i in range(IMAGE_REDUCTION, -1, -1):
+    for i in range(IMAGE_REDUCTION_LEVELS, -1, -1):
         print("============================== Image reduction iteration : ", i)
         print("Number of circles coordinates : ", len(local_maxima_coords))
-        # Multiply the coordinates by 2
-        local_maxima_coords = [[row[0] * 2, row[1] * 2, row[2] * 4, row[3]] for row in local_maxima_coords]
+        if local_maxima_coords:
+            # Multiply the coordinates by SCALE_FACTOR to match the next image resolution
+            local_maxima_coords = [[row[0] * SCALE_FACTOR, row[1] * SCALE_FACTOR, row[2] * SCALE_FACTOR, row[3]] for row in local_maxima_coords]
 
-        if i == IMAGE_REDUCTION:
+        if i == IMAGE_REDUCTION_LEVELS:
             # First iteration, we go through the whole image
             local_max = hough_method(edges_images[i])
             print("LEN local max : ", len(local_max))
