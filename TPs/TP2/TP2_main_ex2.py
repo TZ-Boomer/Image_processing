@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
 from math import *
+from TPs.TP2 import paths
 
-
-IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP2_resources/images/four.png"
+IMAGE_PATH = paths.IMAGE_PATH
 
 
 """ Hough parameters """
@@ -29,6 +29,7 @@ def main():
     display_image(edges_image)
 
     circles_coords = hough_method(edges_image)
+    print("circles_coords : ", circles_coords)
 
     draw_circles(image, circles_coords)
     display_image(image)
