@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from math import *
-from TPs.TP2 import paths
+from TPs.TP2 import local_paths
 
 IMAGE_PATH = paths.IMAGE_PATH
 
