@@ -12,11 +12,11 @@ DELTA_C = 1
 DELTA_RAD = 1
 MIN_R = 0
 MIN_C = 0
-MIN_RAD = 5
+MIN_RAD = 1
 
-N_CIRCLES = 4
+N_CIRCLES = 2
 FILTER_EDGES_THRESHOLD = 0.2
-LOCAL_MAX_KERNEL_SIZE = 11 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
+LOCAL_MAX_KERNEL_SIZE = 5 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
 
 
 def main():

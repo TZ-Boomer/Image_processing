@@ -3,17 +3,7 @@ import numpy as np
 from math import *
 from TPs.TP2 import paths
 
-
 IMAGE_PATH = paths.IMAGE_PATH
-
-"""
-Clues to resolve the issue :
-- Refine circles center and radius
-    After the first iteration, take the coordinates and recompute the circles withe close center dans radius values
-        -> small accumulator
-    As I already did, compute eventual new circles that was to small to be detected.
-"""
-
 
 
 """ Hough parameters """
@@ -22,13 +12,17 @@ DELTA_C = 1
 DELTA_RAD = 1
 MIN_R = 0
 MIN_C = 0
-MIN_RAD = 5
-N_CIRCLES = 5
-FILTER_EDGES_THRESHOLD = 0.2
-LOCAL_MAX_KERNEL_SIZE = 3
+MIN_RAD = 1
 
-IMAGE_REDUCTION_LEVELS = 1 # Image divided by 2 at each iteration
+N_CIRCLES = 8 # Per iteration, after the first iteration there is a low tolerance to add new circles (MIN_DETECT_LEVEL)
+FILTER_EDGES_THRESHOLD = 0.4
+LOCAL_MAX_KERNEL_SIZE = 5 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
+
+IMAGE_REDUCTION_LEVELS = 3 # Image divided by SCALE_FACTOR at each iteration
 SCALE_FACTOR = 2
+MIN_DETECT_LEVEL = 0.9
+CIRCLE_CENTER_UPDATE_RANGE = 0
+CIRCLE_RADIUS_UPDATE_RANGE = 8
 
 
 def main():
@@ -38,9 +32,66 @@ def main():
     # Get the edges image
     edges_image = get_edges_image(image, threshold_ratio=FILTER_EDGES_THRESHOLD)
 
-    display_image(edges_image)
-
     image_reduction(edges_image, image)
+
+
+def image_reduction(edges_image, original_image):
+    final_image = original_image.copy()
+    edges_images = []
+    original_images = []
+    local_maxima_coords = []
+
+    edges_images.append(edges_image)
+    original_images.append(original_image)
+
+    for i in range(IMAGE_REDUCTION_LEVELS):
+        # We take the previous resize [-1] and resize it again
+        edges_images.append(resize_image(edges_images[-1]))
+        original_images.append(resize_image(original_images[-1]))
+
+
+    print("Number of images scale : ", len(edges_images))
+
+    for i in range(IMAGE_REDUCTION_LEVELS, -1, -1):
+        print("====================== Iteration number : ", i)
+        display_image(edges_images[i])
+        display_image(original_images[i])
+
+        if local_maxima_coords:
+            # Scale up the coordinates and radius
+            local_maxima_coords = [
+                [
+                    coord[0] * SCALE_FACTOR,
+                    coord[1] * SCALE_FACTOR,
+                    coord[2] * SCALE_FACTOR,
+                    coord[3] # Likeliness of the circle, no need to be scaled
+                ]
+                for coord in local_maxima_coords
+            ]
+
+        if i == IMAGE_REDUCTION_LEVELS: # Initial case on the whole image
+            local_maxima_coords.extend(hough_method(edges_images[i]))
+        else: # Next steps, defining a max radius and updating the circles
+            # Use Hough method to detect small circles
+            new_circles = hough_method(edges_images[i], MIN_RAD * 2)
+
+            # Use Hough method to update old circles
+            updated_circles = hough_method(edges_images[i], -1, local_maxima_coords)
+            print("Before coordinates update : ", local_maxima_coords)
+            print("After coordinates update : ", updated_circles)
+            local_maxima_coords = updated_circles
+
+            # Only keep the circles that have a probability higher than 0.9
+            best_new_circles = [circle for circle in new_circles if circle[3] > MIN_DETECT_LEVEL]
+            local_maxima_coords.extend(best_new_circles)
+
+        print("Coordinates : ", local_maxima_coords)
+        draw_circles(original_images[i], local_maxima_coords)
+        display_image(original_images[i])
+
+
+    draw_circles(final_image, local_maxima_coords)
+    display_image(final_image)
 
 
 def resize_image(image):
@@ -55,47 +106,6 @@ def resize_image(image):
     return new_image
 
 
-def image_reduction(edges_image, original_image):
-    edges_images = []
-    original_images = []
-    local_maxima_coords = []
-
-    edges_images.append(edges_image)
-    original_images.append(original_image)
-
-    for i in range(IMAGE_REDUCTION_LEVELS):
-        # We take the previous resize [-1] and resize it again
-        edges_images.append(resize_image(edges_images[-1]))
-        original_images.append(resize_image(original_images[-1]))
-
-    print("Number of images : ", len(edges_images))
-
-    for i in range(IMAGE_REDUCTION_LEVELS, -1, -1):
-        print("============================== Image reduction iteration : ", i)
-        print("Number of circles coordinates : ", len(local_maxima_coords))
-        if local_maxima_coords:
-            # Multiply the coordinates by SCALE_FACTOR to match the next image resolution
-            local_maxima_coords = [[row[0] * SCALE_FACTOR, row[1] * SCALE_FACTOR, row[2] * SCALE_FACTOR, row[3]] for row in local_maxima_coords]
-
-        if i == IMAGE_REDUCTION_LEVELS:
-            # First iteration, we go through the whole image
-            local_max = hough_method(edges_images[i])
-            print("LEN local max : ", len(local_max))
-            local_maxima_coords.extend(local_max)
-        else:
-            # We only compute the circles in range [MIN_RAD ; 2 * MIN_RAD], because 2 * MIN_RAD was our previous MIN_RAD
-            local_max = hough_method(edges_images[i], 2 * MIN_RAD)
-            print("LEN local max : ", len(local_max))
-            local_maxima_coords.extend(local_max)
-
-        print("local_maxima_coords : ", local_maxima_coords)
-
-        # Create a copy of the image, draw the circles and display it
-        image_copy = original_images[i].copy()
-        draw_circles(image_copy, local_maxima_coords)
-        display_image(image_copy)
-
-
 def display_image(image):
     # Display the edges
     cv2.imshow('Image', image)
@@ -106,20 +116,20 @@ def display_image(image):
 
 
 def get_edges_image(image, gaussian_ksize=(5, 5), threshold_ratio=0.1):
-    # Step 1: Apply Gaussian blur to reduce noise (optional but recommended)
+    #Apply Gaussian blur to reduce noise (optional but recommended)
     blurred_image = cv2.GaussianBlur(image, gaussian_ksize, 0)
 
-    # Step 2: Apply Sobel filters to compute the gradients in the x and y directions
+    # Apply Sobel filters to compute the gradients in the x and y directions
     sobel_x = cv2.Sobel(blurred_image, cv2.CV_64F, 1, 0, ksize=3)  # Gradient in x-direction
     sobel_y = cv2.Sobel(blurred_image, cv2.CV_64F, 0, 1, ksize=3)  # Gradient in y-direction
 
-    # Step 3: Compute the gradient magnitude
+    # Compute the gradient magnitude
     magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
 
-    # Step 4: Normalize the magnitude to the range [0, 255] for better visualization
+    # Normalize the magnitude to the range [0, 255] for better visualization
     magnitude_normalized = np.uint8(np.clip(magnitude / np.max(magnitude) * 255, 0, 255))
 
-    # Step 5: Threshold to create the final edge image (binary)
+    # Threshold to create the final edge image (binary)
     _, edges_image = cv2.threshold(magnitude_normalized, threshold_ratio * 255, 255, cv2.THRESH_BINARY)
 
     return edges_image
@@ -140,27 +150,28 @@ def get_edges_coordinates(edges_image):
 
 
 def populate_accumulator(edges_image, max_radius):
+    print("Populating accumulator...")
     # Get the dimensions of the image
     height, width = edges_image.shape[:2]
 
     r_max = height - 1
     c_max = width - 1
 
-    n_c = floor(((c_max - MIN_C) / DELTA_C) + 1)  # The number of column discretize
-    n_r = floor(((r_max - MIN_R) / DELTA_R) + 1)  # The number of rows discretize
-
-    if max_radius == -1: # We compute all the possible circle for the whole image between MIN_RAD and diagonal
+    n_col = floor(((c_max - MIN_C) / DELTA_C) + 1)  # The number of column discretize
+    n_row = floor(((r_max - MIN_R) / DELTA_R) + 1)  # The number of rows discretize
+    if max_radius == -1:
         diagonal = np.sqrt(width ** 2 + height ** 2)
-        n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
-    else: # We compute the possible circles between MIN_RAD and max_radius
+    else:
         diagonal = max_radius
-        n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
+    n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
 
-    print("n_r_values : ", n_r)
-    print("n_c_values : ", n_c)
-    print("n_rad_values : ", n_rad)
+    print("===== Accumulator size : ")
+    print("n_row : ", n_row)
+    print("n_col : ", n_col)
+    print("n_rad : ", n_rad)
     print("diagonal : ", diagonal)
-    accumulator = np.zeros((n_c, n_r, n_rad))
+    print("number of elements : ", n_row * n_col * n_rad)
+    accumulator = np.zeros((n_col, n_row, n_rad))
 
     edge_coordinates = get_edges_coordinates(edges_image)
 
@@ -176,7 +187,7 @@ def populate_accumulator(edges_image, max_radius):
                     acc_r_idx = int((r_idx - MIN_R) / DELTA_R)
                     acc_rad_idx = int((circle_radius - MIN_RAD) / DELTA_RAD)
 
-                    if 0 <= acc_c_idx < n_c and 0 <= acc_r_idx < n_r and 0 <= acc_rad_idx < n_rad:
+                    if 0 <= acc_c_idx < n_col and 0 <= acc_r_idx < n_row and 0 <= acc_rad_idx < n_rad:
                         accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += (1 / (2 * np.pi * circle_radius))
                     else:
                         raise Exception(f"Unexpected index value for the accumulator "
@@ -185,8 +196,84 @@ def populate_accumulator(edges_image, max_radius):
     return accumulator
 
 
+def update_accumulator(edges_image, local_maxima_coords):
+    print("Updating accumulator...")
+    # Get the dimensions of the image
+    height, width = edges_image.shape[:2]
+
+    r_max = height - 1
+    c_max = width - 1
+
+    n_col = floor(((c_max - MIN_C) / DELTA_C) + 1)  # The number of column discretize
+    n_row = floor(((r_max - MIN_R) / DELTA_R) + 1)  # The number of rows discretize
+    diagonal = np.sqrt(width ** 2 + height ** 2)
+    n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
+
+    print("===== Accumulator size : ")
+    print("n_row : ", n_row)
+    print("n_col : ", n_col)
+    print("n_rad : ", n_rad)
+    print("diagonal : ", diagonal)
+    print("number of elements : ", n_row * n_col * n_rad)
+    accumulator = np.zeros((n_col, n_row, n_rad))
+
+    edge_coordinates = get_edges_coordinates(edges_image)
+
+    for circle in local_maxima_coords:
+        cir_x, cir_y, cir_rad, _ = circle
+
+        # +1 because the upper limit is excluded from the interval
+        c_idx_range = range(
+            max(int(cir_x) - CIRCLE_CENTER_UPDATE_RANGE, MIN_C),
+            min(int(cir_x) + CIRCLE_CENTER_UPDATE_RANGE + 1, n_col + 1)
+        )
+        r_idx_range = range(
+            max(int(cir_y) - CIRCLE_CENTER_UPDATE_RANGE, MIN_R),
+            min(int(cir_y) + CIRCLE_CENTER_UPDATE_RANGE + 1, n_row + 1)
+        )
+        rad_idx_range = range(
+            max(int(cir_rad) - CIRCLE_RADIUS_UPDATE_RANGE, MIN_RAD),
+            min(int(cir_rad) + CIRCLE_RADIUS_UPDATE_RANGE + 1, n_rad + 1)
+        )
+
+        for col_idx in c_idx_range:
+            for row_idx in r_idx_range:
+                for rad_idx in rad_idx_range:
+                    """
+                    CIRCLE_RADIUS_UPDATE_RANGE needs to be large because the outline of the circle is a thick line in 
+                    the edge image. For instance, if the current circle's radius is too small and 
+                    CIRCLE_RADIUS_UPDATE_RANGE is too small, you will update the circle radius with a bigger value but 
+                    still too small because you are only capturing the inside of the thick circle's outline. If 
+                    CIRCLE_RADIUS_UPDATE_RANGE is large enough you will go trough all the thick circle outline and the 
+                    resulting radius value will be the center of the thick outline, which is our optimum radius value.
+                    """
+                    # Precompute distances to edge points within the max radius range
+                    nearby_edges = [
+                        (edge_x, edge_y) for edge_x, edge_y in edge_coordinates
+                        if abs(edge_x - col_idx) <= rad_idx_range[-1] and abs(edge_y - row_idx) <= rad_idx_range[-1]
+                    ]
+                    # For each edge check if it is on the perimeter of the circle
+                    for edge_x, edge_y in nearby_edges:
+
+                        circle_radius = compute_pixels_distance(col_idx, row_idx, edge_x, edge_y)
+                        # Update the accumulator if the edged is on the perimeter of the circle
+                        # The values aren't exact so add a boundary
+                        if rad_idx - 0.5 <= circle_radius <= rad_idx + 0.5:
+                            acc_c_idx = int((col_idx - MIN_C) / DELTA_C)
+                            acc_r_idx = int((row_idx - MIN_R) / DELTA_R)
+                            acc_rad_idx = int((rad_idx - MIN_RAD) / DELTA_RAD)
+
+                            if 0 <= acc_c_idx < n_col and 0 <= acc_r_idx < n_row and 0 <= acc_rad_idx < n_rad:
+                                accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += (1 / (2 * np.pi * rad_idx))
+                            else:
+                                raise Exception(f"Unexpected index value for the accumulator "
+                                                f"acc_c_idx : {acc_c_idx}, acc_r_idx : {acc_r_idx}, acc_rad_idx : {acc_rad_idx}")
+
+    return accumulator
+
+
 def get_local_maximum(accumulator):
-    n_c, n_r, n_rad = accumulator.shape
+    n_col, n_row, n_rad = accumulator.shape
 
     padding = int(LOCAL_MAX_KERNEL_SIZE / 2)
     kernel = list(range(-padding, padding + 1))
@@ -195,8 +282,8 @@ def get_local_maximum(accumulator):
     local_maxima_coords = []
 
     # Loop through each element in the 3D array, avoiding the borders
-    for x in range(padding, n_c - padding):
-        for y in range(padding, n_r - padding):
+    for x in range(padding, n_col - padding):
+        for y in range(padding, n_row - padding):
             for z in range(padding, n_rad - padding):
                 # Get the current value
                 current_value = accumulator[x, y, z]
@@ -234,8 +321,8 @@ def get_local_maximum(accumulator):
 
 
 def draw_circles(original_image, sorted_local_maxima_coords):
-    color = (0, 255, 0)  # Color in BGR (Green in this case)
-    thickness = 1  # Line thickness (-1 to fill the circle)
+    color = (0, 255, 0)
+    thickness = 1
 
     n_circles = len(sorted_local_maxima_coords)
 
@@ -249,13 +336,15 @@ def draw_circles(original_image, sorted_local_maxima_coords):
         cv2.circle(original_image, (x, y), radius, color, thickness)
 
 
-def hough_method(edges_image, max_radius=-1):
-    accumulator = populate_accumulator(edges_image, max_radius)
+def hough_method(edges_image, max_radius=-1, local_maxima_coords=-1):
+    if local_maxima_coords == -1:
+        accumulator = populate_accumulator(edges_image, max_radius)
+    else:
+        accumulator = update_accumulator(edges_image, local_maxima_coords)
 
     sorted_local_maxima_coords = get_local_maximum(accumulator)
 
     return sorted_local_maxima_coords
-
 
 
 def compute_pixels_distance(p1x, p1y, p2x, p2y):
