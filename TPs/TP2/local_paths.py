@@ -1,1 +1,0 @@
-IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Ecoles/Polytech/Inge_3/Image_processing/TP2_resources/images/coins2.jpg"
