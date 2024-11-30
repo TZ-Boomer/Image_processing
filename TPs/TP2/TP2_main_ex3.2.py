@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from math import *
-from TPs.TP2 import local_paths
+from TPs.TP2 import paths
 
 IMAGE_PATH = paths.IMAGE_PATH
 
@@ -12,15 +12,15 @@ DELTA_C = 1
 DELTA_RAD = 1
 MIN_R = 0
 MIN_C = 0
-MIN_RAD = 1
+MIN_RAD = 3
 
-N_CIRCLES = 8 # Per iteration, after the first iteration there is a low tolerance to add new circles (MIN_DETECT_LEVEL)
-FILTER_EDGES_THRESHOLD = 0.4
+N_CIRCLES = 3 # Per iteration, after the first iteration there is a low tolerance to add new circles (MIN_DETECT_LEVEL)
+FILTER_EDGES_THRESHOLD = 0.2
 LOCAL_MAX_KERNEL_SIZE = 5 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
 
-IMAGE_REDUCTION_LEVELS = 3 # Image divided by SCALE_FACTOR at each iteration
+IMAGE_REDUCTION_LEVELS = 1 # Image divided by SCALE_FACTOR at each iteration
 SCALE_FACTOR = 2
-MIN_DETECT_LEVEL = 0.9
+MIN_DETECT_LEVEL = 0.5
 CIRCLE_CENTER_UPDATE_RANGE = 0
 CIRCLE_RADIUS_UPDATE_RANGE = 8
 

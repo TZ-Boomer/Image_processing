@@ -2,6 +2,9 @@ import cv2
 import numpy as np
 from math import *
 from TPs.TP2 import paths
+import matplotlib.pyplot as plt
+import time
+
 
 IMAGE_PATH = paths.IMAGE_PATH
 
@@ -15,8 +18,8 @@ MIN_C = 0
 MIN_RAD = 1
 
 N_CIRCLES = 4
-FILTER_EDGES_THRESHOLD = 0.2
-LOCAL_MAX_KERNEL_SIZE = 5 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
+FILTER_EDGES_THRESHOLD = 0.1
+LOCAL_MAX_KERNEL_SIZE = 7 # Size of the kernel (cube) that avoid multiple similar circles (same center and radius)
 
 
 def main():
@@ -27,12 +30,59 @@ def main():
     edges_image = get_edges_image(image, threshold_ratio=FILTER_EDGES_THRESHOLD)
 
     display_image(edges_image)
+    start_time = time.time()  # Record the start time
 
-    circles_coords = hough_method(edges_image)
+    image_gradient_direction = sobel_filter(image)
+
+    circles_coords = hough_method(edges_image, image_gradient_direction)
     print("circles_coords : ", circles_coords)
+
+    end_time = time.time()  # Record the end time
+    execution_time = end_time - start_time  # Calculate the execution time
+    print(f"Execution time: {execution_time:.2f} seconds")
 
     draw_circles(image, circles_coords)
     display_image(image)
+
+
+
+def sobel_filter(image):
+    # Ensure the input image is grayscale
+    if len(image.shape) == 3:  # Check if the image has 3 channels (color)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Apply the Sobel filter in the x and y directions
+    sobel_x = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
+
+    # Compute gradient magnitude and direction
+    gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+    gradient_direction = np.arctan2(sobel_y, sobel_x)  # In radians
+
+    # Normalize Sobel outputs for visualization (scale to 0-255)
+    sobel_x_normalized = cv2.convertScaleAbs(sobel_x)
+    sobel_y_normalized = cv2.convertScaleAbs(sobel_y)
+    gradient_magnitude_normalized = cv2.convertScaleAbs(gradient_magnitude)
+
+    # Display the results
+    titles = ['Original Image', 'Sobel X', 'Sobel Y', 'Gradient Magnitude', 'Gradient Direction']
+    images = [image, sobel_x_normalized, sobel_y_normalized, gradient_magnitude_normalized, gradient_direction]
+
+    plt.figure(figsize=(8, 10))
+
+    for i in range(len(images)):
+        plt.subplot(3, 2, i + 1)
+        if i == len(images) - 1:  # Gradient direction uses a colormap for angles
+            plt.imshow(images[i], cmap='hsv')  # Hue for direction
+        else:
+            plt.imshow(images[i], cmap='gray')  # Grayscale for other visualizations
+        plt.title(titles[i])
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+    return gradient_direction
 
 
 def display_image(image):
@@ -78,16 +128,16 @@ def get_edges_coordinates(edges_image):
     return edge_coordinates
 
 
-def populate_accumulator(edges_image):
+def populate_accumulator(edges_image, image_gradient_direction):
     # Get the dimensions of the image
-    height, width = edges_image.shape[:2]
+    image_height, image_width = edges_image.shape[:2]
 
-    r_max = height - 1
-    c_max = width - 1
+    r_max = image_height - 1
+    c_max = image_width - 1
 
     n_c = floor(((c_max - MIN_C) / DELTA_C) + 1)  # The number of column discretize
     n_r = floor(((r_max - MIN_R) / DELTA_R) + 1)  # The number of rows discretize
-    diagonal = np.sqrt(width ** 2 + height ** 2)
+    diagonal = np.sqrt(image_width ** 2 + image_height ** 2)
     n_rad = floor(((diagonal - MIN_RAD) / DELTA_R) + 1)
 
     print("n_r_values : ", n_r)
@@ -101,20 +151,20 @@ def populate_accumulator(edges_image):
     for edge in edge_coordinates:
         edge_x, edge_y = edge
 
-        for c_idx in range(width):
-            for r_idx in range(height):
-                # If the point in the image is too close to the edge, we do not compute the associated circle
-                circle_radius = compute_pixels_distance(c_idx, r_idx, edge_x, edge_y)
-                if MIN_RAD <= circle_radius < diagonal:
-                    acc_c_idx = int((c_idx - MIN_C) / DELTA_C)
-                    acc_r_idx = int((r_idx - MIN_R) / DELTA_R)
-                    acc_rad_idx = int((circle_radius - MIN_RAD) / DELTA_RAD)
+        # Gradient direction at the edge point (opposite direction for inward normal)
+        theta = image_gradient_direction[edge_y, edge_x] + np.pi  # Reverse direction
 
-                    if 0 <= acc_c_idx < n_c and 0 <= acc_r_idx < n_r and 0 <= acc_rad_idx < n_rad:
-                        accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += (1 / (2 * np.pi * circle_radius))
-                    else:
-                        raise Exception(f"Unexpected index value for the accumulator "
-                                        f"acc_c_idx : {acc_c_idx}, acc_r_idx : {acc_r_idx}, acc_rad_idx : {acc_rad_idx}")
+        for radius in range(MIN_RAD, int(diagonal), 1):
+            # Compute possible circle center
+            center_x = round(edge_x + radius * np.cos(theta))  # Center x-coordinate
+            center_y = round(edge_y + radius * np.sin(theta))  # Center y-coordinate
+
+            # Update the accumulator if the circle center is within the image
+            if 0 <= center_x < image_width and 0 <= center_y < image_height:
+                acc_c_idx = int((center_x - MIN_C) / DELTA_C)
+                acc_r_idx = int((center_y - MIN_R) / DELTA_R)
+                acc_rad_idx = int((radius - MIN_RAD) / DELTA_RAD)
+                accumulator[acc_c_idx][acc_r_idx][acc_rad_idx] += (1 / (2 * np.pi * radius))
 
     return accumulator
 
@@ -183,8 +233,8 @@ def draw_circles(original_image, sorted_local_maxima_coords):
         cv2.circle(original_image, (x, y), radius, color, thickness)
 
 
-def hough_method(edges_image):
-    accumulator = populate_accumulator(edges_image)
+def hough_method(edges_image, image_gradient_direction):
+    accumulator = populate_accumulator(edges_image, image_gradient_direction)
 
     sorted_local_maxima_coords = get_local_maximum(accumulator)
 
