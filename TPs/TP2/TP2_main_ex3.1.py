@@ -45,7 +45,6 @@ def main():
     display_image(image)
 
 
-
 def sobel_filter(image):
     # Ensure the input image is grayscale
     if len(image.shape) == 3:  # Check if the image has 3 channels (color)
