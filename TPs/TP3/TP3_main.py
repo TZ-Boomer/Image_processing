@@ -251,8 +251,8 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     print(f"Generated solutions file : {solutions_file}")
 
     # Final result
-    cv2.imwrite("reconstruction_result.png", reconstruction)
-    print("Final reconstruction saved : reconstruction_result.png")
+    cv2.imwrite("reconstruction_result_8000.png", reconstruction)
+    print("Final reconstruction saved : reconstruction_result_8000.png")
 
     show_image(reconstruction)
 

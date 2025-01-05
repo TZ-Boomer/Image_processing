@@ -8,6 +8,10 @@ FRAGMENT_PATH = paths.FRAGMENT_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 
+detector_n_features = 5000 # No more improvements after 5000
+key_points_matching_ratio = 0.6 # Lower is more restrictive
+
+
 def load_fragments(fragment_path):
     # Initialize a list to store the data
     fragments = []
@@ -70,9 +74,9 @@ def detect_and_compute(image, detector_type="SIFT"):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     if detector_type == "SIFT":
-        detector = cv2.SIFT_create()
+        detector = cv2.SIFT_create(nfeatures=detector_n_features)
     elif detector_type == "ORB":
-        detector = cv2.ORB_create()
+        detector = cv2.ORB_create(nfeatures=detector_n_features)
     elif detector_type == "FAST":
         detector = cv2.FastFeatureDetector_create()
         return detector.detect(image, None), None
@@ -133,8 +137,7 @@ def ransac_affine_no_scale(kp_src, kp_dst, matches, reproj_thresh=5.0):
     src_pts = np.float32([kp_src[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([kp_dst[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
 
-    # Estimate partial 2D affine: rotation, uniform scale, translation (no shear)
-    # with RANSAC
+    # Estimate partial 2D affine: rotation, uniform scale, translation (no shear) with RANSAC
     M_estimated, inliers = cv2.estimateAffinePartial2D(
         src_pts, dst_pts,
         method=cv2.RANSAC,
@@ -271,7 +274,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
 
     # Loading of fresco
     painting = get_painting(final_image_path, black=False)  # for matching
-    reconstruction = get_painting(final_image_path, black=True)  # for overlay
+    reconstruction = get_painting(final_image_path, black=False)  # for overlay
 
     # Keypoints & descriptors of the fresco
     kp_painting, desc_painting = detect_and_compute(painting, "SIFT")
@@ -280,6 +283,8 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     solutions_file = "solutions.txt"
     f_out = open(solutions_file, 'w')
 
+    n_frag_placed = 0
+
     for frag_index, frag_img in fragments_images:
         print(f"--- Processing fragment {frag_index} ---")
 
@@ -287,11 +292,11 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
         kp_frag, desc_frag = detect_and_compute(frag_img, "SIFT")
 
         # Matching
-        matches = match_keypoints(desc_frag, desc_painting, method="FLANN", ratio_thresh=0.7)
+        matches = match_keypoints(desc_frag, desc_painting, method="FLANN", ratio_thresh=key_points_matching_ratio)
         print(f"Number of matches before RANSAC : {len(matches)}")
 
         if len(matches) < 3:
-            # For partial affine, we need at least 3 matches
+            # For partial affine, we need at least 3 matches (without rescaling)
             print(f"Not enough good matches (>=3) for fragment {frag_index}.")
             continue
 
@@ -311,6 +316,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
 
         # Visual overlay using affine warp
         reconstruction = overlay_fragment_on_painting_no_scale(reconstruction, frag_img, M_no_scale)
+        n_frag_placed += 1
 
         # (Optional) debug match visualization
         # matches_img = draw_matches(frag_img, kp_frag, painting, kp_painting, matches, inlier_mask)
@@ -319,11 +325,13 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
         #     cv2.waitKey(500)
 
     f_out.close()
-    print(f"Generated solutions file : {solutions_file}")
+    print(f"\nGenerated solutions file : {solutions_file}")
 
     # Final result
     cv2.imwrite("reconstruction_result.png", reconstruction)
     print("Final reconstruction saved : reconstruction_result.png")
+
+    print(f"Number of fragments placed on the fresco : {n_frag_placed}.")
 
     show_image(reconstruction)
 
