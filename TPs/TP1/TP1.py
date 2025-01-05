@@ -3,11 +3,6 @@ import numpy as np
 import math
 
 
-# Paths and directories
-FRAGMENT_DIRECTORY = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP1_resources/frag_eroded/"
-FRAGMENT_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP1_resources/fragments.txt"
-FINAL_IMAGE_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP1_resources/Michelangelo_ThecreationofAdam_1707x775.jpg"
-SOLUTION_PATH = "C:/Users/julie/Desktop/All/Important/Polytech/Inge_3/Traitement_d_image/TP1_resources/solution.txt"
 
 # Parameters for the solution file evaluation
 DELTA_X = 1
