@@ -1,0 +1,9 @@
+.idea/
+TPs/.idea/
+TPs/TP1/paths.py
+TPs/TP2/__pycache__/
+TPs/TP2/paths.py
+TPs/TP3/__pycache__/
+TPs/TP3/paths.py
+TPs/TP3/reconstruction_result.png
+TPs/TP3/solutions.txt
