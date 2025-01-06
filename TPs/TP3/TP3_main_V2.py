@@ -4,12 +4,18 @@ import paths
 import math
 import os
 
-FRAGMENT_PATH = paths.FRAGMENT_PATH
+FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
+SOLUTION_PATH = paths.SOLUTION_PATH
 
-detector_n_features = 5000 # No more improvements after 5000
+detector_n_features = 5000 # No more improvements when above 5000
 key_points_matching_ratio = 0.6 # Lower is more restrictive
+
+# Parameters for the solution file evaluation
+DELTA_X = 1
+DELTA_Y = 1
+DELTA_ANGLE = 1
 
 
 def load_fragments(fragment_path):
@@ -258,6 +264,71 @@ def decompose_homography(H):
     return posx, posy, angle
 
 
+def get_pixels_count(data, fragment_directory):
+    fragment_pixels = {}
+
+    for fragment in data:
+        path = fragment_directory + f"frag_eroded_{fragment[0]}.png"
+        image = cv2.imread(path, -1) # Load with alpha channel "-1"
+        alpha_channel = image[:, :, 3]
+        non_transparent_pixels = np.count_nonzero(alpha_channel > 0)
+        fragment_pixels[fragment[0]] = non_transparent_pixels
+
+    return fragment_pixels
+
+
+def compute_solution_precision(fragments_data, ground_truth_solution_data, fragment_directory):
+    well_placed = [] # Well-placed fragments
+    wrong_fragments = [] # Fragments that shouldn't be placed
+    gd_solution_idx = 0
+
+    # Get the number of pixels for each fragment in the data files
+    ground_truth_solution_pixels = get_pixels_count(ground_truth_solution_data, fragment_directory)
+    print("ground_truth_solution_pixels : ", ground_truth_solution_pixels)
+    fragments_data_pixels = get_pixels_count(fragments_data, fragment_directory)
+
+    for i in range(len(fragments_data)):
+        # If we went through all the fragments in the solution,
+        # all the fragments that are still in fragment_data are wrong
+        if gd_solution_idx >= len(ground_truth_solution_data):
+            wrong_fragments.append(fragments_data_pixels.get(fragments_data[i][0]))
+            continue # Go to the next "wrong" fragment
+
+        while fragments_data[i][0] > ground_truth_solution_data[gd_solution_idx][0]:
+            gd_solution_idx += 1
+            if gd_solution_idx >= len(ground_truth_solution_data):
+                continue
+
+        # If the two fragments have the same ID, check if it is well-placed (more or less delta)
+        if fragments_data[i][0] == ground_truth_solution_data[gd_solution_idx][0]:  # If the two ids are the same
+            if ((abs(fragments_data[i][1] - ground_truth_solution_data[gd_solution_idx][1])) < DELTA_X and
+                    (abs(fragments_data[i][2] - ground_truth_solution_data[gd_solution_idx][2])) < DELTA_Y and
+                    (abs(fragments_data[i][3] - ground_truth_solution_data[gd_solution_idx][3])) < DELTA_ANGLE):
+                print("fragments_data[i][0] : ", fragments_data[i][0])
+                print("ground_truth_solution_data[solution_index][0] : ", ground_truth_solution_data[gd_solution_idx][0])
+                well_placed.append(ground_truth_solution_pixels.get(ground_truth_solution_data[gd_solution_idx][0]))
+
+            gd_solution_idx += 1
+
+        elif fragments_data[i][0] < ground_truth_solution_data[gd_solution_idx][0]:
+            wrong_fragments.append(fragments_data_pixels.get(fragments_data[i][0]))
+
+    print("ground_truth_solution_pixels.values() : ", ground_truth_solution_pixels.values())
+    # Compute the precision
+    precision = (np.sum(well_placed) - np.sum(wrong_fragments)) / (sum(ground_truth_solution_pixels.values()))
+
+    return precision
+
+
+def evaluate_solution(fragments_path, solution_path, fragment_directory):
+    print("\nThe fragments in solution.txt must be sorted by their IDs in ascending order.\n")
+    fragments_data = load_fragments(fragments_path)
+    solution_data = load_fragments(solution_path)
+
+    print(f"The precision of : {fragments_path}")
+    print(f"is : {compute_solution_precision(fragments_data, solution_data, fragment_directory) * 100:.4f}%")
+
+
 def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     """
     Main function for fresco reconstruction using PARTIAL AFFINE with NO SCALE:
@@ -280,7 +351,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     kp_painting, desc_painting = detect_and_compute(painting, "SIFT")
 
     # Create solution file
-    solutions_file = "solutions.txt"
+    solutions_file = "TP3_solutions.txt"
     f_out = open(solutions_file, 'w')
 
     n_frag_placed = 0
@@ -288,7 +359,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     for frag_index, frag_img in fragments_images:
         print(f"--- Processing fragment {frag_index} ---")
 
-        # Keypoints & descriptors of the fragment
+        # Key points & descriptors of the fragment
         kp_frag, desc_frag = detect_and_compute(frag_img, "SIFT")
 
         # Matching
@@ -335,10 +406,13 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
 
     show_image(reconstruction)
 
+    return solutions_file
+
 
 # Example usage
 def main():
-    image_reconstruction(FRAGMENT_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    TP3_solution = image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    evaluate_solution(TP3_solution, SOLUTION_PATH, FRAGMENT_DIRECTORY)
 
 
 if __name__ == "__main__":
