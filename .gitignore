@@ -1,5 +1,6 @@
 .idea/
 TPs/.idea/
+TPs/TP1/__pycache__/
 TPs/TP1/paths.py
 TPs/TP2/__pycache__/
 TPs/TP2/paths.py

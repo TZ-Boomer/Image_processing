@@ -1,8 +1,13 @@
 import cv2
 import numpy as np
 import math
+import paths
 
 
+FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
+FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
+TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
+SOLUTION_PATH = paths.SOLUTION_PATH
 
 # Parameters for the solution file evaluation
 DELTA_X = 1
@@ -27,14 +32,14 @@ def load_fragments(fragment_path):
     return fragments
 
 
-def load_images(fragments, images_path):
+def load_images(fragments, images_directory):
     print("Images loading...")
     images = []
 
     for i in range(len(fragments)):
         image_name = "frag_eroded_" + str(fragments[i][0]) + ".png"
         # Load an image from file
-        image = cv2.imread(images_path + image_name)
+        image = cv2.imread(images_directory + image_name)
 
         # Check if the image was loaded successfully
         if image is None:
@@ -210,18 +215,33 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     return fragments_data
 
 
-def evaluate_solution(fragments_data, solution_path, fragment_directory):
+def evaluate_solution(fragments_data, solution_data, fragment_directory):
     print("\nThe fragments in solution.txt must be sorted by their IDs in ascending order.\n")
     # Load the data in the solution file
-    solution_data = load_fragments(solution_path)
+    #solution_data = load_fragments(solution_path)
 
-    print(f"The precision of : {solution_path}")
+    print(f"The precision of the computed fragment position and rotation")
     print(f"is : {compute_solution_precision(fragments_data, solution_data, fragment_directory) * 100:.4f}%")
 
 
+def save_fragment_data_output(fragment_data):
+    # Save to a text file
+    file_path = "fragment_data_output_TP1.txt"
+
+    with open(file_path, "w") as file:
+        for row in fragment_data:
+            # Convert each element to a string and join with a space (or other delimiter)
+            file.write(" ".join(map(str, row)) + "\n")
+
+    print(f"Data saved to {file_path}")
+
+
 def main():
-    fragments_data = image_reconstruction(FRAGMENT_PATH, FRAGMENT_DIRECTORY, FINAL_IMAGE_PATH)
-    evaluate_solution(fragments_data, SOLUTION_PATH, FRAGMENT_DIRECTORY)
+    fragments_data = image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    """NO SOLUTION FILE AVAILABLE !!!"""
+    evaluate_solution(fragments_data, fragments_data, FRAGMENT_DIRECTORY)
+
+    save_fragment_data_output(fragments_data)
 
 
 if __name__ == '__main__':

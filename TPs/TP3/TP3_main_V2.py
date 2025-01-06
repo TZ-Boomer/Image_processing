@@ -8,14 +8,15 @@ FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 SOLUTION_PATH = paths.SOLUTION_PATH
+program_output = "TP3_output.txt"
 
 detector_n_features = 5000 # No more improvements when above 5000
 key_points_matching_ratio = 0.6 # Lower is more restrictive
 
 # Parameters for the solution file evaluation
-DELTA_X = 1
-DELTA_Y = 1
-DELTA_ANGLE = 1
+DELTA_X = 100
+DELTA_Y = 100
+DELTA_ANGLE = 100
 
 
 def load_fragments(fragment_path):
@@ -284,10 +285,12 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
 
     # Get the number of pixels for each fragment in the data files
     ground_truth_solution_pixels = get_pixels_count(ground_truth_solution_data, fragment_directory)
-    print("ground_truth_solution_pixels : ", ground_truth_solution_pixels)
     fragments_data_pixels = get_pixels_count(fragments_data, fragment_directory)
 
     for i in range(len(fragments_data)):
+        #print("fragments_data[i][0] : ", fragments_data[i][0])
+        #print("ground_truth_solution_data[solution_index][0] : ", ground_truth_solution_data[gd_solution_idx][0])
+
         # If we went through all the fragments in the solution,
         # all the fragments that are still in fragment_data are wrong
         if gd_solution_idx >= len(ground_truth_solution_data):
@@ -301,11 +304,12 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
 
         # If the two fragments have the same ID, check if it is well-placed (more or less delta)
         if fragments_data[i][0] == ground_truth_solution_data[gd_solution_idx][0]:  # If the two ids are the same
+            print("fragments_data[i][0] : ", fragments_data[i][0])
+            print("ground_truth_solution_data[solution_index][0] : ", ground_truth_solution_data[gd_solution_idx][0])
+
             if ((abs(fragments_data[i][1] - ground_truth_solution_data[gd_solution_idx][1])) < DELTA_X and
                     (abs(fragments_data[i][2] - ground_truth_solution_data[gd_solution_idx][2])) < DELTA_Y and
                     (abs(fragments_data[i][3] - ground_truth_solution_data[gd_solution_idx][3])) < DELTA_ANGLE):
-                print("fragments_data[i][0] : ", fragments_data[i][0])
-                print("ground_truth_solution_data[solution_index][0] : ", ground_truth_solution_data[gd_solution_idx][0])
                 well_placed.append(ground_truth_solution_pixels.get(ground_truth_solution_data[gd_solution_idx][0]))
 
             gd_solution_idx += 1
@@ -320,12 +324,12 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
     return precision
 
 
-def evaluate_solution(fragments_path, solution_path, fragment_directory):
+def evaluate_solution(fragments_output_path, solution_path, fragment_directory):
     print("\nThe fragments in solution.txt must be sorted by their IDs in ascending order.\n")
-    fragments_data = load_fragments(fragments_path)
+    fragments_data = load_fragments(fragments_output_path)
     solution_data = load_fragments(solution_path)
 
-    print(f"The precision of : {fragments_path}")
+    print(f"The precision of : {fragments_output_path}")
     print(f"is : {compute_solution_precision(fragments_data, solution_data, fragment_directory) * 100:.4f}%")
 
 
@@ -351,8 +355,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
     kp_painting, desc_painting = detect_and_compute(painting, "SIFT")
 
     # Create solution file
-    solutions_file = "TP3_solutions.txt"
-    f_out = open(solutions_file, 'w')
+    f_out = open(program_output, 'w')
 
     n_frag_placed = 0
 
@@ -396,7 +399,7 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
         #     cv2.waitKey(500)
 
     f_out.close()
-    print(f"\nGenerated solutions file : {solutions_file}")
+    print(f"\nGenerated solutions file : {program_output}")
 
     # Final result
     cv2.imwrite("reconstruction_result.png", reconstruction)
@@ -406,13 +409,11 @@ def image_reconstruction(fragment_path, fragment_directory, final_image_path):
 
     show_image(reconstruction)
 
-    return solutions_file
-
 
 # Example usage
 def main():
-    TP3_solution = image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
-    evaluate_solution(TP3_solution, SOLUTION_PATH, FRAGMENT_DIRECTORY)
+    #image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    evaluate_solution(program_output, SOLUTION_PATH, FRAGMENT_DIRECTORY)
 
 
 if __name__ == "__main__":
