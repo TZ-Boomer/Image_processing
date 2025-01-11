@@ -2,149 +2,65 @@ import cv2
 import numpy as np
 import paths
 import math
-import os
+import TP3_tools
 
 
-FRAGMENT_PATH = paths.FRAGMENT_PATH
+FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
+SOLUTION_PATH = paths.SOLUTION_PATH
+program_output = "TP3_main_output.txt"
+
+detector_n_features = 5000 # No more improvements when above 5000
+key_points_matching_ratio = 0.6 # Lower is more restrictive
+BLACK_FRESCO = True
+
+# Parameters for the solution file evaluation
+DELTA_X = 10
+DELTA_Y = 10
+DELTA_ANGLE = 10
 
 
-def load_fragments(fragment_path):
-    # Initialize a list to store the data
-    fragments = []
+def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=5.0):
+    # For affine transform, we need at least 3 matches (non-collinear).
+    if len(matches) < 3:
+        raise ValueError("Not enough matches for an affine transform.")
 
-    # Open the file and read line by line
-    with open(fragment_path, 'r') as file:
-        for line in file:
-            # Split each line by spaces and convert the values to appropriate types
-            values = line.split()
-            # Convert the first three to integers and the last one to float
-            values = [int(values[0]), int(values[1]), int(values[2]), float(values[3])]
-            # Append the parsed values to the data list
-            fragments.append(values)
+    # Collect matched keypoints
+    frag_pts = np.float32([kp_frag[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+    fresco_pts = np.float32([kp_fresco[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
 
-    return fragments
+    # Estimate partial 2D affine: rotation, uniform scale, translation (no shear) with RANSAC
+    M_estimated, inliers = cv2.estimateAffinePartial2D(
+        frag_pts, fresco_pts,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=reproj_thresh
+    )
+    if M_estimated is None:
+        raise ValueError("Could not estimate partial affine transform.")
 
+    inlier_mask = inliers.ravel().tolist()  # Nx1 -> list of 0/1
 
-def load_images(fragments, images_path):
-    print("Images loading...")
-    images = []
+    # M_estimated is [ [a, b, tx],
+    #                  [c, d, ty] ]
+    # with (a,d) ~ scale*cos(theta), (b,c) ~ scale*sin(theta)
 
-    for frag_data in fragments:
-        frag_index = frag_data[0]
-        image_name = f"frag_eroded_{frag_index}.png"
-        image_path = os.path.join(images_path, image_name)
+    # (1) Extract rotation angle
+    angle = math.atan2(M_estimated[1, 0], M_estimated[0, 0])  # atan2(c, a)
 
-        image = cv2.imread(image_path)
-        if image is None:
-            print(f"Error: Could not load the image : {image_name}.")
-        images.append((frag_index, image))
+    # (2) Force scale = 1
+    cosA = math.cos(angle)
+    sinA = math.sin(angle)
+    tx = M_estimated[0, 2]
+    ty = M_estimated[1, 2]
 
-    print("Images loaded done.")
-    return images
+    # Rebuild an affine transform with no scale
+    M_no_scale = np.array([
+        [cosA, -sinA, tx],
+        [sinA,  cosA, ty]
+    ], dtype=np.float32)
 
-
-def get_painting(painting_path, black=False):
-    painting = cv2.imread(painting_path)
-
-    if painting is None:
-        raise FileNotFoundError(f"Could not load the fresco {painting_path}.")
-
-    if black:
-        height, width, _ = painting.shape
-        # Create a black image of size y x with 3 channels (RGB)
-        return np.zeros((height, width, 3), dtype=np.uint8)
-    else:
-        return painting
-
-
-def show_image(image):
-    cv2.imshow('Image', image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
-def detect_and_compute(image, detector_type="SIFT"):
-    if image is None:
-        return None, None
-
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    if detector_type == "SIFT":
-        detector = cv2.SIFT_create()
-    elif detector_type == "ORB":
-        detector = cv2.ORB_create()
-    elif detector_type == "FAST":
-        detector = cv2.FastFeatureDetector_create()
-        return detector.detect(image, None), None
-    else:
-        raise ValueError("Unsupported detector type")
-
-    keypoints, descriptors = detector.detectAndCompute(gray_image, None)
-
-    return keypoints, descriptors
-
-
-def match_keypoints(desc1, desc2, method="FLANN", ratio_thresh=0.6):
-    if desc1 is None or desc2 is None:
-        return []
-
-    if method == "FLANN":
-        index_params = dict(algorithm=1, trees=5)  # FLANN with KDTree
-        search_params = dict(checks=50)
-        matcher = cv2.FlannBasedMatcher(index_params, search_params)
-    elif method == "BF":
-        # Pour SIFT : NORM_L2
-        # Pour ORB  : NORM_HAMMING
-        matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
-    else:
-        raise ValueError("Unsupported matching method")
-
-    try:
-        knn_matches = matcher.knnMatch(desc1, desc2, k=2)
-    except cv2.error as e:
-        print(f"OpenCV error in knnMatch : {e}")
-        return []
-
-    # Apply ratio test to filter matches
-    good_matches = []
-    for m, n in knn_matches:
-        if m.distance < ratio_thresh * n.distance:
-            good_matches.append(m)
-
-    return good_matches
-
-
-def ransac_filter(kp1, kp2, matches, reproj_thresh=5.0):
-    if len(matches) < 4:
-        raise ValueError("Not enough matches for RANSAC")
-
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-
-    H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, reproj_thresh)
-
-    if H is None:
-        raise ValueError("Homography not found")
-
-    matches_mask = mask.ravel().tolist()
-
-    return H, matches_mask
-
-
-def decompose_homography(H):
-    # Extract the rotation/translation part
-    r00, r01, t0 = H[0, 0], H[0, 1], H[0, 2]
-    r10, r11, t1 = H[1, 0], H[1, 1], H[1, 2]
-
-    # Calculating the angle from the rotation matrix
-    angle = math.degrees(math.atan2(r10, r00))
-
-    # Positions (translation)
-    posx, posy = t0, t1
-
-    return posx, posy, angle
+    return M_no_scale, inlier_mask
 
 
 def draw_matches(img1, kp1, img2, kp2, matches, matches_mask):
@@ -159,107 +75,76 @@ def draw_matches(img1, kp1, img2, kp2, matches, matches_mask):
     )
 
     result = cv2.drawMatches(img1, kp1, img2, kp2, matches, None, **draw_params)
-
     return result
 
 
-def overlay_fragment_on_painting(painting, fragment, H):
-    if fragment is None or painting is None:
-        return painting
-
-    h, w, _ = painting.shape
-    warped_fragment = cv2.warpPerspective(fragment, H, (w, h))
-
-    # To embed we assume that the background of the fragment is black or transparent.
-    # If it is black, we can make a simple mask.
-    fragment_gray = cv2.cvtColor(warped_fragment, cv2.COLOR_BGR2GRAY)
-    _, mask = cv2.threshold(fragment_gray, 10, 255, cv2.THRESH_BINARY)
-    mask_inv = cv2.bitwise_not(mask)
-
-    # Mask the corresponding area in the painting
-    painting_bg = cv2.bitwise_and(painting, painting, mask=mask_inv)
-    # Combines fragment and painting
-    painting_fg = cv2.bitwise_and(warped_fragment, warped_fragment, mask=mask)
-    final = cv2.add(painting_bg, painting_fg)
-
-    return final
-
-
-def image_reconstruction(fragment_path, fragment_directory, final_image_path):
-    """
-    Fonction principale pour la reconstruction de la fresque :
-    1) Chargement des infos (index, etc.) + images
-    2) Détection et matching des points d'intérêt
-    3) RANSAC, homographie
-    4) Sauvegarde <index> <posx> <posy> <angle> dans un fichier de solutions
-    5) (Optionnel) Incrustation visuelle des fragments
-    """
+def image_reconstruction(fragment_path, fragment_directory, target_image_path):
     print("----- Image Reconstruction -----")
     # Loading fragments
-    fragments_data = load_fragments(fragment_path)
-    fragments_images = load_images(fragments_data, fragment_directory)
+    fragments_data = TP3_tools.load_fragments(fragment_path)
+    fragments_images = TP3_tools.load_images(fragments_data, fragment_directory)
 
     # Loading of fresco
-    painting = get_painting(final_image_path, black=False) # For matching
-    reconstruction = get_painting(final_image_path, black=True) # For overlay
+    painting = TP3_tools.get_painting(target_image_path, black=False)  # for matching
+    reconstruction = TP3_tools.get_painting(target_image_path, black=BLACK_FRESCO)  # for overlay
 
-    # Key points and description of fresco
-    kp_painting, desc_painting = detect_and_compute(painting, "SIFT")
+    # Keypoints & descriptors of the fresco
+    kp_painting, desc_painting = TP3_tools.detect_and_compute(painting, detector_n_features, "SIFT")
 
-    # Creating solution file
-    solutions_file = "solutions.txt"
-    f_out = open(solutions_file, 'w')
+    # Create solution file
+    f_out = open(program_output, 'w')
+    # Count the number of fragment placed
+    n_frag_placed = 0
 
     for frag_index, frag_img in fragments_images:
         print(f"--- Processing fragment {frag_index} ---")
 
-        # Key points and description
-        kp_frag, desc_frag = detect_and_compute(frag_img, "SIFT")
+        # Key points & descriptors of the fragment
+        kp_frag, desc_frag = TP3_tools.detect_and_compute(frag_img, detector_n_features, "SIFT")
 
-        # Matching between the fragment and the fresco
-        matches = match_keypoints(desc_frag, desc_painting, method="FLANN", ratio_thresh=0.7)
+        # Matching
+        matches = TP3_tools.match_keypoints(desc_frag, desc_painting, method="FLANN", ratio_thresh=key_points_matching_ratio)
         print(f"Number of matches before RANSAC : {len(matches)}")
 
-        if len(matches) < 4:
-            print(f"Not enough good matches for fragment {frag_index}.")
+        if len(matches) < 3:
+            # For partial affine, we need at least 3 matches
+            print(f"Not enough good matches (>=3) for fragment {frag_index}.")
             continue
 
-        # RANSAC to estimate the homography
+        # Estimate partial affine with RANSAC, no scale
         try:
-            H, mask = ransac_filter(kp_frag, kp_painting, matches, reproj_thresh=5.0)
+            M_affine, inlier_mask = ransac_affine_no_scale(kp_frag, kp_painting, matches, reproj_thresh=5.0)
         except ValueError as e:
-            print(f"Error RANSAC for fragment {frag_index} : {e}")
+            print(f"Error computing partial affine for fragment {frag_index}: {e}")
             continue
 
-        # Decomposition to obtain (posx, posy, angle)
-        posx, posy, angle = decompose_homography(H)
+        # Decompose to get (posx, posy, angle)
+        posx, posy, angle = TP3_tools.decompose_affine_no_scale(M_affine)
 
-        # Writing to the solutions file
+        # Write to solutions file
         f_out.write(f"{frag_index} {int(posx)} {int(posy)} {angle:.2f}\n")
         print(f"Fragment {frag_index} => posx={int(posx)}, posy={int(posy)}, angle={angle:.2f}")
 
-        # Visual overlay
-        reconstruction = overlay_fragment_on_painting(reconstruction, frag_img, H)
-
-        # (Optionnel) Visualisation des matches pour debug
-        # matches_img = draw_matches(frag_img, kp_frag, painting, kp_painting, matches, mask)
-        # if matches_img is not None:
-        #     cv2.imshow(f"Matches Fragment {frag_index}", matches_img)
-        #     cv2.waitKey(500)
+        # Visual overlay using affine warp
+        reconstruction = TP3_tools.overlay_fragment_on_painting_no_scale(reconstruction, frag_img, M_affine)
+        n_frag_placed += 1
 
     f_out.close()
-    print(f"Generated solutions file : {solutions_file}")
+    print(f"\nGenerated solutions file : {program_output}")
 
     # Final result
-    cv2.imwrite("reconstruction_result_8000.png", reconstruction)
-    print("Final reconstruction saved : reconstruction_result_8000.png")
+    cv2.imwrite("reconstruction_result.png", reconstruction)
+    print("Final reconstruction saved : reconstruction_result.png")
 
-    show_image(reconstruction)
+    print(f"Number of fragments placed on the fresco : {n_frag_placed}.")
+
+    TP3_tools.show_image(reconstruction)
 
 
 # Example usage
 def main():
-    image_reconstruction(FRAGMENT_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)    # Load fragment images
+    image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    TP3_tools.evaluate_solution(program_output, SOLUTION_PATH, FRAGMENT_DIRECTORY, DELTA_X, DELTA_Y, DELTA_ANGLE)
 
 
 if __name__ == "__main__":
