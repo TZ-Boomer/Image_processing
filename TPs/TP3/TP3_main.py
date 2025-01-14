@@ -5,7 +5,6 @@ import math
 import TP3_tools
 
 
-FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 SOLUTION_PATH = paths.SOLUTION_PATH
@@ -16,9 +15,9 @@ key_points_matching_ratio = 0.6 # Lower is more restrictive
 BLACK_FRESCO = True
 
 # Parameters for the solution file evaluation
-DELTA_X = 10
-DELTA_Y = 10
-DELTA_ANGLE = 10
+DELTA_X = 20
+DELTA_Y = 20
+DELTA_ANGLE = 5
 
 
 def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=5.0):
@@ -78,11 +77,10 @@ def draw_matches(img1, kp1, img2, kp2, matches, matches_mask):
     return result
 
 
-def image_reconstruction(fragment_path, fragment_directory, target_image_path):
+def image_reconstruction(fragment_directory, target_image_path):
     print("----- Image Reconstruction -----")
     # Loading fragments
-    fragments_data = TP3_tools.load_fragments(fragment_path)
-    fragments_images = TP3_tools.load_images(fragments_data, fragment_directory)
+    fragments_images = TP3_tools.load_images(fragment_directory)
 
     # Loading of fresco
     painting = TP3_tools.get_painting(target_image_path, black=False)  # for matching
@@ -130,6 +128,7 @@ def image_reconstruction(fragment_path, fragment_directory, target_image_path):
         n_frag_placed += 1
 
     f_out.close()
+    TP3_tools.sort_csv_by_first_column(program_output, program_output)
     print(f"\nGenerated solutions file : {program_output}")
 
     # Final result
@@ -143,7 +142,7 @@ def image_reconstruction(fragment_path, fragment_directory, target_image_path):
 
 # Example usage
 def main():
-    image_reconstruction(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    #image_reconstruction(FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
     TP3_tools.evaluate_solution(program_output, SOLUTION_PATH, FRAGMENT_DIRECTORY, DELTA_X, DELTA_Y, DELTA_ANGLE)
 
 

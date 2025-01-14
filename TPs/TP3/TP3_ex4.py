@@ -4,7 +4,6 @@ import paths
 import TP3_tools
 
 
-FRAGMENT_DATA_PATH = paths.FRAGMENT_DATA_PATH
 FRAGMENT_DIRECTORY = paths.FRAGMENT_DIRECTORY
 TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 SOLUTION_PATH = paths.SOLUTION_PATH
@@ -53,9 +52,8 @@ def compute_geometric_transformation(kp_frag, kp_fresco, filtered_matches, repro
     return M_affine
 
 
-def reconstruct_image(fragment_path, fragment_directory, target_image_path):
-    fragments_data = TP3_tools.load_fragments(fragment_path)
-    fragments_images = TP3_tools.load_images(fragments_data, fragment_directory)
+def reconstruct_image(fragment_directory, target_image_path):
+    fragments_images = TP3_tools.load_images(fragment_directory)
     fresco_image = cv2.imread(target_image_path)
     kp_fresco, desc_fresco = TP3_tools.detect_and_compute(fresco_image, detector_n_features)
 
@@ -109,7 +107,7 @@ def reconstruct_image(fragment_path, fragment_directory, target_image_path):
 
 
 def main():
-    reconstruct_image(FRAGMENT_DATA_PATH, FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    reconstruct_image(FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
     TP3_tools.evaluate_solution(program_output, SOLUTION_PATH, FRAGMENT_DIRECTORY, DELTA_X, DELTA_Y, DELTA_ANGLE)
 
 

@@ -2,6 +2,8 @@ import math
 import cv2
 import os
 import numpy as np
+import re
+import csv
 
 
 def decompose_affine_no_scale(M):
@@ -23,17 +25,27 @@ def load_fragments(fragment_path):
     return fragments
 
 
-def load_images(fragments, images_path):
+def load_images(image_directory):
     print("Images loading...")
     images = []
-    for frag_data in fragments:
-        frag_index = frag_data[0]
-        image_name = f"frag_eroded_{frag_index}.png"
-        image_path = os.path.join(images_path, image_name)
-        image = cv2.imread(image_path)
-        if image is None:
-            print(f"Error: Could not load the image : {image_name}.")
-        images.append((frag_index, image))
+
+    for file_name in os.listdir(image_directory):
+        file_path = os.path.join(image_directory, file_name)
+        if file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+            try:
+                # Extract index from the filename using regex
+                match = re.search(r'(\d+)', file_name)  # Looks for digits in the name
+                index = int(match.group(1)) if match else None
+
+                # Load the image
+                img = cv2.imread(file_path)
+                if img is not None:
+                    images.append((index, img))
+                else:
+                    print(f"Error loading image {file_name}: File may be corrupted.")
+            except Exception as e:
+                print(f"Error loading image {file_name}: {e}")
+
     print("Images loaded done.")
     return images
 
@@ -142,10 +154,13 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
     frag_well_placed = [] # Well-placed fragments
     wrong_frag = [] # Fragments that shouldn't be placed
     gd_solution_idx = 0
+    frag_in = 0
 
     # Get the number of pixels for each fragment in the data files
     ground_truth_solution_pixels = get_pixels_count(ground_truth_solution_data, fragment_directory)
     fragments_data_pixels = get_pixels_count(fragments_data, fragment_directory)
+
+    print("LEN FRAG DATA : ", len(fragments_data))
 
     for i in range(len(fragments_data)):
         # If we went through all the fragments in the solution,
@@ -161,9 +176,22 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
 
         # If the two fragments have the same ID, check if it is well-placed (more or less delta)
         if fragments_data[i][0] == ground_truth_solution_data[gd_solution_idx][0]:  # If the two ids are the same
+            frag_in += 1
+            output_normalized_angle = fragments_data[i][3]
+            # The solution angle is taken in the opposite direction and need to be normalized in [-180 ; 180]
+            solution_angle = ground_truth_solution_data[gd_solution_idx][3]
+            solution_normalized_angle = - (solution_angle + 180) % 360 - 180
+
+            print("===================output_normalized_angle : ", output_normalized_angle)
+            print("fragments_data[i][1] : ", fragments_data[i][1])
+            print("fragments_data[i][2] : ", fragments_data[i][2])
+            print("solution_normalized_angle : ", solution_normalized_angle)
+            print("ground_truth_solution_data[gd_solution_idx][1] : ", ground_truth_solution_data[gd_solution_idx][1])
+            print("ground_truth_solution_data[gd_solution_idx][2] : ", ground_truth_solution_data[gd_solution_idx][2])
+
             if ((abs(fragments_data[i][1] - ground_truth_solution_data[gd_solution_idx][1])) < DELTA_X and
                     (abs(fragments_data[i][2] - ground_truth_solution_data[gd_solution_idx][2])) < DELTA_Y and
-                    (abs(fragments_data[i][3] - ground_truth_solution_data[gd_solution_idx][3])) < DELTA_ANGLE):
+                    (abs(output_normalized_angle - solution_normalized_angle)) < DELTA_ANGLE):
                 frag_well_placed.append(ground_truth_solution_pixels.get(ground_truth_solution_data[gd_solution_idx][0]))
 
             gd_solution_idx += 1
@@ -171,6 +199,9 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
         elif fragments_data[i][0] < ground_truth_solution_data[gd_solution_idx][0]:
             wrong_frag.append(fragments_data_pixels.get(fragments_data[i][0]))
 
+    print("frag_in : ", frag_in)
+    print("len(frag_well_placed) : ", len(frag_well_placed))
+    print("len(wrong_frag) : ", len(wrong_frag))
     # Compute the precision
     precision = (np.sum(frag_well_placed) - np.sum(wrong_frag)) / (sum(ground_truth_solution_pixels.values()))
 
@@ -184,3 +215,32 @@ def evaluate_solution(fragments_output_path, solution_path, fragment_directory, 
 
     print(f"The precision of : {fragments_output_path}")
     print(f"is : {compute_solution_precision(fragments_data, solution_data, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE) * 100:.4f}%")
+
+
+def sort_csv_by_first_column(input_file, output_file):
+    def extract_first_value(value):
+        # Split by spaces and take the first value
+        value = value.split()[0]  # Get the first number in the string
+        try:
+            return int(value)
+        except ValueError:
+            return None  # If there's no valid integer, return None
+
+    with open(input_file, 'r') as infile:
+        reader = csv.reader(infile, delimiter=' ')  # Read with space as delimiter
+        rows = []
+
+        for row in reader:
+            first_value = extract_first_value(row[0])  # Clean and extract the first value from the first column
+            if first_value is not None:
+                row[0] = first_value  # Replace the first column with the extracted value
+                rows.append(row)
+            else:
+                print(f"Skipping row with invalid first column value: {row[0]}")
+
+        # Sort rows based on the cleaned first column values
+        sorted_rows = sorted(rows, key=lambda row: row[0])
+
+    with open(output_file, 'w', newline='') as outfile:
+        writer = csv.writer(outfile, delimiter=' ')  # Use space as delimiter for output
+        writer.writerows(sorted_rows)  # Write sorted rows
