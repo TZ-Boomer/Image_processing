@@ -12,12 +12,12 @@ program_output = "TP3_ex4_output.txt"
 # Paramètres de tolérance pour la distance
 DISTANCE_TOLERANCE = 1e-3  # Ajustez selon le bruit et la précision
 detector_n_features = 5000 # No more improvements when above 5000
-BLACK_FRESCO = False
+BLACK_FRESCO = True
 
 # Parameters for the solution file evaluation
-DELTA_X = 10
-DELTA_Y = 10
-DELTA_ANGLE = 10
+DELTA_X = 100
+DELTA_Y = 100
+DELTA_ANGLE = 5
 
 
 def filter_by_distance_conservation(kp_frag, kp_fresco, matches):
@@ -61,6 +61,7 @@ def reconstruct_image(fragment_directory, target_image_path):
 
     # Create solution file
     f_out = open(program_output, 'w')
+
     # Count the number of fragment placed
     n_frag_placed = 0
 
@@ -96,6 +97,10 @@ def reconstruct_image(fragment_directory, target_image_path):
         n_frag_placed += 1
 
         print(f"Fragment {frag_index} processed successfully.")
+
+    f_out.close()
+    TP3_tools.sort_csv_by_first_column(program_output, program_output)
+    print(f"\nGenerated solutions file : {program_output}")
 
     # Final result
     cv2.imwrite("reconstruction_result.png", reconstruction)

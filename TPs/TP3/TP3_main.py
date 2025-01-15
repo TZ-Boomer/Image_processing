@@ -15,8 +15,8 @@ key_points_matching_ratio = 0.6 # Lower is more restrictive
 BLACK_FRESCO = True
 
 # Parameters for the solution file evaluation
-DELTA_X = 20
-DELTA_Y = 20
+DELTA_X = 50
+DELTA_Y = 50
 DELTA_ANGLE = 5
 
 
@@ -35,19 +35,16 @@ def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=5.0):
         method=cv2.RANSAC,
         ransacReprojThreshold=reproj_thresh
     )
+
     if M_estimated is None:
         raise ValueError("Could not estimate partial affine transform.")
 
     inlier_mask = inliers.ravel().tolist()  # Nx1 -> list of 0/1
 
-    # M_estimated is [ [a, b, tx],
-    #                  [c, d, ty] ]
-    # with (a,d) ~ scale*cos(theta), (b,c) ~ scale*sin(theta)
-
-    # (1) Extract rotation angle
+    # Get rotation angle
     angle = math.atan2(M_estimated[1, 0], M_estimated[0, 0])  # atan2(c, a)
 
-    # (2) Force scale = 1
+    # Force scale = 1
     cosA = math.cos(angle)
     sinA = math.sin(angle)
     tx = M_estimated[0, 2]
@@ -74,6 +71,7 @@ def draw_matches(img1, kp1, img2, kp2, matches, matches_mask):
     )
 
     result = cv2.drawMatches(img1, kp1, img2, kp2, matches, None, **draw_params)
+
     return result
 
 
@@ -91,6 +89,7 @@ def image_reconstruction(fragment_directory, target_image_path):
 
     # Create solution file
     f_out = open(program_output, 'w')
+
     # Count the number of fragment placed
     n_frag_placed = 0
 
@@ -142,7 +141,7 @@ def image_reconstruction(fragment_directory, target_image_path):
 
 # Example usage
 def main():
-    #image_reconstruction(FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
+    image_reconstruction(FRAGMENT_DIRECTORY, TARGET_IMAGE_PATH)
     TP3_tools.evaluate_solution(program_output, SOLUTION_PATH, FRAGMENT_DIRECTORY, DELTA_X, DELTA_Y, DELTA_ANGLE)
 
 

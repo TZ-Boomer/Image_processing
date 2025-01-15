@@ -47,6 +47,7 @@ def load_images(image_directory):
                 print(f"Error loading image {file_name}: {e}")
 
     print("Images loaded done.")
+
     return images
 
 
@@ -98,8 +99,6 @@ def match_keypoints(desc1, desc2, method="FLANN", ratio_thresh=0.6):
     if method == "FLANN":
         matcher = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
     elif method == "BF":
-        # For SIFT : NORM_L2
-        # For ORB  : NORM_HAMMING
         matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
     else:
         raise ValueError("Unsupported matching method")
@@ -213,8 +212,8 @@ def evaluate_solution(fragments_output_path, solution_path, fragment_directory, 
     fragments_data = load_fragments(fragments_output_path)
     solution_data = load_fragments(solution_path)
 
-    print(f"The precision of : {fragments_output_path}")
-    print(f"is : {compute_solution_precision(fragments_data, solution_data, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE) * 100:.4f}%")
+    precision = compute_solution_precision(fragments_data, solution_data, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE)
+    print(f"The precision of : {fragments_output_path} is {precision * 100:.2f}%")
 
 
 def sort_csv_by_first_column(input_file, output_file):
