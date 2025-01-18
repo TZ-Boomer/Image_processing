@@ -6,13 +6,24 @@ import re
 import csv
 
 
-def decompose_affine_no_scale(M):
-    angle = math.atan2(M[1, 0], M[0, 0])
-    posx = M[0, 2]
-    posy = M[1, 2]
-    angle_deg = math.degrees(angle)
+def compute_frag_coordinates(fresque, frag, M_affine):
+    h, w, _ = fresque.shape
 
-    return posx, posy, angle_deg
+    frag_h, frag_w, _ = frag.shape
+    middle_point = np.array([frag_w / 2, frag_h / 2], dtype=np.float32).reshape(1, 1, 2)
+
+    # Apply affine transformation to the middle point
+    transformed_middle_point = cv2.transform(middle_point, M_affine).reshape(2)
+
+    # Extract angle (correct for inverted Y-axis in image coordinates)
+    angle_rad = -math.atan2(M_affine[1, 0], M_affine[0, 0])
+    angle_deg = math.degrees(angle_rad)
+
+    # Normalize angle to [-360, 0] range
+    if angle_deg > 0:
+        angle_deg -= 360
+
+    return transformed_middle_point[0], transformed_middle_point[1], angle_deg
 
 
 def load_fragments(fragment_path):
@@ -46,7 +57,7 @@ def load_images(image_directory):
             except Exception as e:
                 print(f"Error loading image {file_name}: {e}")
 
-    print("Images loaded done.")
+    print("Images loading done.")
 
     return images
 
@@ -151,21 +162,19 @@ def get_pixels_count(data, fragment_directory):
 
 def compute_solution_precision(fragments_data, ground_truth_solution_data, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE):
     frag_well_placed = [] # Well-placed fragments
-    wrong_frag = [] # Fragments that shouldn't be placed
-    gd_solution_idx = 0
-    frag_in = 0
+    frag_wrong = [] # Fragments that shouldn't be placed
+    gd_solution_idx = 0 # Index in the solution file
+    frag_matching = 0 # Number of fragments in test file that match the solution file
 
     # Get the number of pixels for each fragment in the data files
     ground_truth_solution_pixels = get_pixels_count(ground_truth_solution_data, fragment_directory)
     fragments_data_pixels = get_pixels_count(fragments_data, fragment_directory)
 
-    print("LEN FRAG DATA : ", len(fragments_data))
-
     for i in range(len(fragments_data)):
         # If we went through all the fragments in the solution,
         # all the fragments that are still in fragment_data are wrong
         if gd_solution_idx >= len(ground_truth_solution_data):
-            wrong_frag.append(fragments_data_pixels.get(fragments_data[i][0]))
+            frag_wrong.append(fragments_data_pixels.get(fragments_data[i][0]))
             continue # Go to the next "wrong" fragment
 
         while fragments_data[i][0] > ground_truth_solution_data[gd_solution_idx][0]:
@@ -175,45 +184,43 @@ def compute_solution_precision(fragments_data, ground_truth_solution_data, fragm
 
         # If the two fragments have the same ID, check if it is well-placed (more or less delta)
         if fragments_data[i][0] == ground_truth_solution_data[gd_solution_idx][0]:  # If the two ids are the same
-            frag_in += 1
-            output_normalized_angle = fragments_data[i][3]
-            # The solution angle is taken in the opposite direction and need to be normalized in [-180 ; 180]
-            solution_angle = ground_truth_solution_data[gd_solution_idx][3]
-            solution_normalized_angle = - (solution_angle + 180) % 360 - 180
+            frag_matching += 1
 
-            print("===================output_normalized_angle : ", output_normalized_angle)
-            print("fragments_data[i][1] : ", fragments_data[i][1])
-            print("fragments_data[i][2] : ", fragments_data[i][2])
-            print("solution_normalized_angle : ", solution_normalized_angle)
-            print("ground_truth_solution_data[gd_solution_idx][1] : ", ground_truth_solution_data[gd_solution_idx][1])
-            print("ground_truth_solution_data[gd_solution_idx][2] : ", ground_truth_solution_data[gd_solution_idx][2])
+            output_x = fragments_data[i][1]
+            output_y = fragments_data[i][2]
+            output_angle = fragments_data[i][3]
 
-            if ((abs(fragments_data[i][1] - ground_truth_solution_data[gd_solution_idx][1])) < DELTA_X and
-                    (abs(fragments_data[i][2] - ground_truth_solution_data[gd_solution_idx][2])) < DELTA_Y and
-                    (abs(output_normalized_angle - solution_normalized_angle)) < DELTA_ANGLE):
+            sol_x = ground_truth_solution_data[gd_solution_idx][1]
+            sol_y = ground_truth_solution_data[gd_solution_idx][2]
+            sol_angle = ground_truth_solution_data[gd_solution_idx][3]
+
+            if ((abs(output_x - sol_x)) < DELTA_X and
+                (abs(output_y - sol_y)) < DELTA_Y and
+                (abs(output_angle - sol_angle)) < DELTA_ANGLE):
                 frag_well_placed.append(ground_truth_solution_pixels.get(ground_truth_solution_data[gd_solution_idx][0]))
 
             gd_solution_idx += 1
 
         elif fragments_data[i][0] < ground_truth_solution_data[gd_solution_idx][0]:
-            wrong_frag.append(fragments_data_pixels.get(fragments_data[i][0]))
+            frag_wrong.append(fragments_data_pixels.get(fragments_data[i][0]))
 
-    print("frag_in : ", frag_in)
-    print("len(frag_well_placed) : ", len(frag_well_placed))
-    print("len(wrong_frag) : ", len(wrong_frag))
+    print("Number of fragments that matched the solution : ", frag_matching)
+    print("Number of fragments well placed : ", len(frag_well_placed))
+    print("Number of fragments that shouldn't have been placed : ", len(frag_wrong))
+    print("Total number of fragments that should have been place : ", len(ground_truth_solution_data))
     # Compute the precision
-    precision = (np.sum(frag_well_placed) - np.sum(wrong_frag)) / (sum(ground_truth_solution_pixels.values()))
+    precision = (np.sum(frag_well_placed) - np.sum(frag_wrong)) / (sum(ground_truth_solution_pixels.values()))
 
     return precision
 
 
 def evaluate_solution(fragments_output_path, solution_path, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE):
-    print("\nThe fragments in solution.txt must be sorted by their IDs in ascending order.\n")
+    print("\nTo compute precision the fragments must be sorted by their IDs in ascending order.\n")
     fragments_data = load_fragments(fragments_output_path)
     solution_data = load_fragments(solution_path)
 
     precision = compute_solution_precision(fragments_data, solution_data, fragment_directory, DELTA_X, DELTA_Y, DELTA_ANGLE)
-    print(f"The precision of : {fragments_output_path} is {precision * 100:.2f}%")
+    print(f"\nThe precision of : {fragments_output_path} is {precision * 100:.2f}%")
 
 
 def sort_csv_by_first_column(input_file, output_file):

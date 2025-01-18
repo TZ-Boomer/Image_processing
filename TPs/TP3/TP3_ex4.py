@@ -9,15 +9,15 @@ TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 SOLUTION_PATH = paths.SOLUTION_PATH
 program_output = "TP3_ex4_output.txt"
 
-# Paramètres de tolérance pour la distance
-DISTANCE_TOLERANCE = 1e-3  # Ajustez selon le bruit et la précision
+# Distance threshold parameters
+DISTANCE_THRESHOLD = 3
 detector_n_features = 5000 # No more improvements when above 5000
 BLACK_FRESCO = True
 
-# Parameters for the solution file evaluation
-DELTA_X = 100
-DELTA_Y = 100
-DELTA_ANGLE = 5
+# Parameters to compute the precision
+DELTA_X = 3
+DELTA_Y = 3
+DELTA_ANGLE = 2
 
 
 def filter_by_distance_conservation(kp_frag, kp_fresco, matches):
@@ -32,7 +32,7 @@ def filter_by_distance_conservation(kp_frag, kp_fresco, matches):
             frag_dist = np.linalg.norm(np.array(kp_frag[m1.queryIdx].pt) - np.array(kp_frag[m2.queryIdx].pt))
             fresco_dist = np.linalg.norm(np.array(kp_fresco[m1.trainIdx].pt) - np.array(kp_fresco[m2.trainIdx].pt))
 
-            if abs(frag_dist - fresco_dist) <= DISTANCE_TOLERANCE:
+            if abs(frag_dist - fresco_dist) <= DISTANCE_THRESHOLD:
                 consistent_matches.append(m1)
                 consistent_matches.append(m2)
 
@@ -54,8 +54,8 @@ def compute_geometric_transformation(kp_frag, kp_fresco, filtered_matches, repro
 
 def reconstruct_image(fragment_directory, target_image_path):
     fragments_images = TP3_tools.load_images(fragment_directory)
-    fresco_image = cv2.imread(target_image_path)
-    kp_fresco, desc_fresco = TP3_tools.detect_and_compute(fresco_image, detector_n_features)
+    fresco_img = cv2.imread(target_image_path)
+    kp_fresco, desc_fresco = TP3_tools.detect_and_compute(fresco_img, detector_n_features)
 
     reconstruction = TP3_tools.get_painting(target_image_path, black=BLACK_FRESCO)
 
@@ -66,13 +66,10 @@ def reconstruct_image(fragment_directory, target_image_path):
     n_frag_placed = 0
 
     for frag_index, frag_img in fragments_images:
-        print(f"--- Processing fragment {frag_index} ---")
         kp_frag, desc_frag = TP3_tools.detect_and_compute(frag_img, detector_n_features)
         matches = TP3_tools.match_keypoints(desc_frag, desc_fresco)
-        print(f"Number of matches before filtering: {len(matches)}")
 
         filtered_matches = filter_by_distance_conservation(kp_frag, kp_fresco, matches)
-        print(f"Number of matches after filtering: {len(filtered_matches)}")
 
         if len(filtered_matches) < 3:
             print(f"Not enough consistent matches for fragment {frag_index}.")
@@ -85,8 +82,7 @@ def reconstruct_image(fragment_directory, target_image_path):
             print(f"Error computing partial affine for fragment {frag_index}: {e}")
             continue
 
-        # Decompose to get (posx, posy, angle)
-        posx, posy, angle = TP3_tools.decompose_affine_no_scale(M_affine)
+        posx, posy, angle = TP3_tools.compute_frag_coordinates(fresco_img, frag_img, M_affine)
 
         # Write to solutions file
         f_out.write(f"{frag_index} {int(posx)} {int(posy)} {angle:.2f}\n")

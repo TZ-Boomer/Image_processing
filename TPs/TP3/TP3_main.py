@@ -10,22 +10,23 @@ TARGET_IMAGE_PATH = paths.TARGET_IMAGE_PATH
 SOLUTION_PATH = paths.SOLUTION_PATH
 program_output = "TP3_main_output.txt"
 
-detector_n_features = 5000 # No more improvements when above 5000
-key_points_matching_ratio = 0.6 # Lower is more restrictive
+detector_n_features = 5000 # No more improvements when above 5000 features
+key_points_matching_ratio = 0.65 # Lower is more restrictive
+ransac_reproj_thresh = 10
 BLACK_FRESCO = True
 
-# Parameters for the solution file evaluation
-DELTA_X = 50
-DELTA_Y = 50
-DELTA_ANGLE = 5
+# Parameters to compute the precision
+DELTA_X = 3
+DELTA_Y = 3
+DELTA_ANGLE = 2
 
 
-def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=5.0):
+def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh):
     # For affine transform, we need at least 3 matches (non-collinear).
     if len(matches) < 3:
         raise ValueError("Not enough matches for an affine transform.")
 
-    # Collect matched keypoints
+    # Collect matched key points
     frag_pts = np.float32([kp_frag[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
     fresco_pts = np.float32([kp_fresco[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
 
@@ -39,7 +40,7 @@ def ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=5.0):
     if M_estimated is None:
         raise ValueError("Could not estimate partial affine transform.")
 
-    inlier_mask = inliers.ravel().tolist()  # Nx1 -> list of 0/1
+    inlier_mask = inliers.ravel().tolist()
 
     # Get rotation angle
     angle = math.atan2(M_estimated[1, 0], M_estimated[0, 0])  # atan2(c, a)
@@ -81,11 +82,11 @@ def image_reconstruction(fragment_directory, target_image_path):
     fragments_images = TP3_tools.load_images(fragment_directory)
 
     # Loading of fresco
-    painting = TP3_tools.get_painting(target_image_path, black=False)  # for matching
+    fresco_img = TP3_tools.get_painting(target_image_path, black=False)  # for matching
     reconstruction = TP3_tools.get_painting(target_image_path, black=BLACK_FRESCO)  # for overlay
 
     # Keypoints & descriptors of the fresco
-    kp_painting, desc_painting = TP3_tools.detect_and_compute(painting, detector_n_features, "SIFT")
+    kp_fresco, desc_fresco = TP3_tools.detect_and_compute(fresco_img, detector_n_features, "SIFT")
 
     # Create solution file
     f_out = open(program_output, 'w')
@@ -94,29 +95,25 @@ def image_reconstruction(fragment_directory, target_image_path):
     n_frag_placed = 0
 
     for frag_index, frag_img in fragments_images:
-        print(f"--- Processing fragment {frag_index} ---")
-
         # Key points & descriptors of the fragment
         kp_frag, desc_frag = TP3_tools.detect_and_compute(frag_img, detector_n_features, "SIFT")
 
         # Matching
-        matches = TP3_tools.match_keypoints(desc_frag, desc_painting, method="FLANN", ratio_thresh=key_points_matching_ratio)
-        print(f"Number of matches before RANSAC : {len(matches)}")
+        matches = TP3_tools.match_keypoints(desc_frag, desc_fresco, method="FLANN", ratio_thresh=key_points_matching_ratio)
 
         if len(matches) < 3:
             # For partial affine, we need at least 3 matches
-            print(f"Not enough good matches (>=3) for fragment {frag_index}.")
+            print(f"Not enough matches for fragment {frag_index}.")
             continue
 
-        # Estimate partial affine with RANSAC, no scale
+        # Estimate partial affine with RANSAC without scale
         try:
-            M_affine, inlier_mask = ransac_affine_no_scale(kp_frag, kp_painting, matches, reproj_thresh=5.0)
+            M_affine, inlier_mask = ransac_affine_no_scale(kp_frag, kp_fresco, matches, reproj_thresh=ransac_reproj_thresh)
         except ValueError as e:
             print(f"Error computing partial affine for fragment {frag_index}: {e}")
             continue
 
-        # Decompose to get (posx, posy, angle)
-        posx, posy, angle = TP3_tools.decompose_affine_no_scale(M_affine)
+        posx, posy, angle = TP3_tools.compute_frag_coordinates(fresco_img, frag_img, M_affine)
 
         # Write to solutions file
         f_out.write(f"{frag_index} {int(posx)} {int(posy)} {angle:.2f}\n")
